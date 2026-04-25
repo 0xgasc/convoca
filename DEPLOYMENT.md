@@ -4,7 +4,9 @@
 
 ## 🚀 Live
 
-- **URL**: https://convoca-web-production.up.railway.app
+- **Site**: https://convoca-web-production.up.railway.app
+- **Admin**: https://convoca-web-production.up.railway.app/admin?key=m_9DoNGnJnEV7Y8nZjygy6XdbRuZDFZO  
+  (the key prefills + persists to localStorage; bookmark `/admin` after first load)
 - **Repo**: https://github.com/0xgasc/convoca (private)
 - **Railway project**: https://railway.com/project/5cd66f06-1c2d-48f1-a345-0ec54bc7c702
 
@@ -55,13 +57,14 @@ To stream logs:
 railway logs -s convoca-web
 ```
 
-## Re-seed sources
-
-The seed script reads `.env.local` for `DATABASE_URL` (the public proxy URL).
+## Re-seed
 
 ```bash
-npm run seed:sources
+npm run seed:sources    # 40 sources (idempotent)
+npm run seed:demo       # 17 demo events + 10 flags (wipes prior [DEMO] rows first)
 ```
+
+Both scripts read `DATABASE_URL` from `.env.local` (Railway public proxy).
 
 ## Local dev
 
@@ -78,6 +81,17 @@ npm run dev      # localhost:3000
 - **Voyage AI embeddings for dedup**: dedup currently uses a city + recent-hours window heuristic before judging with Opus. Embedding-based shortlist is a one-day add when needed.
 - **Hardened harvester adapters**: RSS, ICS, Mobilize, NYC Open Data, and Legistar adapters work but use minimal parsers. `telegram_public`, `eventbrite_api`, `website_scrape` are stubs.
 - **Vision extractor iteration**: per CLAUDE.md, this is the highest-leverage prompt — plan to spend a third of remaining time on `VISION_PROMPT` in [`lib/agents/prompts.ts`](./lib/agents/prompts.ts) using real flyer fixtures.
+
+## Roadmap (post-MVP, surfaced from user feedback)
+
+| Item | Why | Sketch |
+|---|---|---|
+| Real bot/human verification on `/submit` | Current rate limit (10/session/h, 30/IP/h) blocks naive abuse but not a determined attacker. | Drop in **Cloudflare Turnstile** (free, no Personal Data) on the DropZone — verify token in `/api/submit`. ~1 hour. |
+| Per-event comments / discussion thread | Several user requests; lets attendees coordinate inside the event page. | New `event_comments` Prisma model + a `Comments` client component on `/events/[id]`. Pipe each new comment through Safety Review like flags. ~3 hours. |
+| Confirm-flag / "I see this too" UI | API exists at `/api/flags/[id]/confirm` but no button surfaces it yet. | Add a button on the FlagOverlay popup. ~30 min. |
+| Sign-in (light) | So community-trusted reporters get higher trust on flags + comments. | Magic-link via Resend → `user_sessions` row keyed by email hash, no profile. |
+| Public agent-runs view | The `/admin` page is gated; non-admins should still see "X agents running right now" as social proof. | Read-only counts at `/api/public/agent-stats`. |
+| Vision extractor seed flyers | The dedup wow is hand-crafted right now. Real flyers from `/public/seed-flyers/` + `npm run test:vision` to iterate `VISION_PROMPT`. |
 
 ## Open decisions
 
