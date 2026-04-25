@@ -1,0 +1,106 @@
+// lib/agents/safetyReview.ts
+// Filters community-submitted safety flags before they appear publicly.
+// Errs toward approval — real-time safety info is high-value to attendees.
+// Blocks doxxing, hate speech, spam.
+
+import Anthropic from '@anthropic-ai/sdk';
+import { z } from 'zod';
+import { SAFETY_REVIEW_PROMPT } from './prompts';
+import { logAgentRun } from './traces';
+import { supabase } from '@/lib/supabase';
+import type { CitySlug, FlagType, SafetyReviewResult } from '@/lib/types';
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+
+const ReviewSchema = z.object({
+  decision: z.enum(['approve', 'block', 'review']),
+  reasoning: z.string(),
+  redacted_note: z.string().nullable(),
+});
+
+export interface SafetyReviewInput {
+  flagType: FlagType;
+  note: string | null;
+  city: CitySlug;
+  reporterSessionId: string;
+}
+
+export async function runSafetyReview(input: SafetyReviewInput): Promise<SafetyReviewResult> {
+  const startedAt = Date.now();
+
+  // Gather context for the review
+  const sessionAgeMinutes = await getSessionAgeMinutes(input.reporterSessionId);
+  const recentFlagsCount = await countRecentFlagsBySession(input.reporterSessionId);
+
+  const prompt = SAFETY_REVIEW_PROMPT({
+    flagType: input.flagType,
+    note: input.note,
+    city: input.city,
+    reporterSessionAgeMinutes: sessionAgeMinutes,
+    similarFlagsFromSessionLastHour: recentFlagsCount,
+  });
+
+  const response = await anthropic.messages.create({
+    model: 'claude-opus-4-7',
+    max_tokens: 600,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const textBlock = response.content.find(b => b.type === 'text');
+  const rawText = textBlock?.type === 'text' ? textBlock.text : '';
+  const parsed = safeJsonParse(rawText);
+  const validation = ReviewSchema.safeParse(parsed);
+
+  // Default-approve on validation failure to preserve safety info value.
+  // Defensive default: only block on explicit "block" decision.
+  const result: SafetyReviewResult = validation.success
+    ? validation.data
+    : { decision: 'approve', reasoning: 'Review agent failed; defaulting to approve.', redacted_note: null };
+
+  await logAgentRun({
+    sessionId: input.reporterSessionId,
+    agentName: 'safety_review',
+    inputSummary: `${input.flagType} in ${input.city}`,
+    outputSummary: `${result.decision}: ${result.reasoning.slice(0, 80)}`,
+    reasoningTrace: result,
+    durationMs: Date.now() - startedAt,
+    model: 'claude-opus-4-7',
+  });
+
+  return result;
+}
+
+async function getSessionAgeMinutes(sessionId: string): Promise<number> {
+  const { data } = await supabase
+    .from('user_sessions')
+    .select('created_at')
+    .eq('id', sessionId)
+    .single();
+  if (!data?.created_at) return 0;
+  const age = Date.now() - new Date(data.created_at).getTime();
+  return Math.floor(age / 60000);
+}
+
+async function countRecentFlagsBySession(sessionId: string): Promise<number> {
+  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { count } = await supabase
+    .from('event_flags')
+    .select('*', { count: 'exact', head: true })
+    .eq('reporter_session_id', sessionId)
+    .gte('created_at', since);
+  return count ?? 0;
+}
+
+function safeJsonParse(text: string): unknown | null {
+  const cleaned = text.trim().replace(/^```(?:json)?/, '').replace(/```$/, '').trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const first = cleaned.indexOf('{');
+    const last = cleaned.lastIndexOf('}');
+    if (first >= 0 && last > first) {
+      try { return JSON.parse(cleaned.slice(first, last + 1)); } catch { return null; }
+    }
+    return null;
+  }
+}
