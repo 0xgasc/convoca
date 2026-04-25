@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { getAgentIcon } from '@/lib/icons';
-import { Cog } from 'lucide-react';
+import { Cog, RefreshCw, Antenna, Loader2 } from 'lucide-react';
 
 interface AdminStats {
   generated_at: string;
@@ -45,6 +45,8 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [filterAgent, setFilterAgent] = useState<string>('');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [harvesting, setHarvesting] = useState(false);
+  const [harvestResult, setHarvestResult] = useState<string | null>(null);
 
   // Pull key from URL or localStorage on mount
   useEffect(() => {
@@ -129,9 +131,37 @@ export default function AdminPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => void load(key)}
-            className="text-xs px-2 py-1 rounded border border-neutral-700 hover:bg-neutral-800"
+            onClick={async () => {
+              setHarvesting(true);
+              setHarvestResult(null);
+              try {
+                const res = await fetch(`/api/harvest?key=${encodeURIComponent(key)}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ city: 'nyc', sessionId: 'admin' }),
+                });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+                setHarvestResult(`Harvested ${json.totalPosts} posts, ${json.eventCandidates} event candidates in ${(json.duration_ms / 1000).toFixed(1)}s`);
+                void load(key);
+              } catch (err) {
+                setHarvestResult(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setHarvesting(false);
+              }
+            }}
+            disabled={harvesting}
+            className="text-xs px-2 py-1 rounded border border-neutral-700 hover:bg-neutral-800 disabled:opacity-50 inline-flex items-center gap-1.5"
+            title="Poll all due RSS / API sources for new posts"
           >
+            {harvesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Antenna className="w-3 h-3" />}
+            {harvesting ? 'Harvesting...' : 'Run harvester'}
+          </button>
+          <button
+            onClick={() => void load(key)}
+            className="text-xs px-2 py-1 rounded border border-neutral-700 hover:bg-neutral-800 inline-flex items-center gap-1.5"
+          >
+            <RefreshCw className="w-3 h-3" />
             Refresh
           </button>
           <button
@@ -147,6 +177,12 @@ export default function AdminPage() {
           </button>
         </div>
       </header>
+
+      {harvestResult && (
+        <div className="mx-6 mt-4 px-3 py-2 rounded bg-blue-950/40 border border-blue-900 text-blue-200 text-sm">
+          {harvestResult}
+        </div>
+      )}
 
       {error && (
         <div className="mx-6 mt-4 px-3 py-2 rounded bg-red-950/60 border border-red-900 text-red-200 text-sm">
