@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { prisma } from '@/lib/db';
 import { runSafetyReview } from '@/lib/agents/safetyReview';
 import { FLAG_TYPE_DISPLAY } from '@/lib/constants';
 import type { CitySlug, FlagSeverity, FlagType } from '@/lib/types';
@@ -21,29 +21,40 @@ export async function GET(req: Request) {
     return Response.json({ error: 'city query param required (nyc | guatemala_city)' }, { status: 400 });
   }
 
-  let q = supabase
-    .from('event_flags')
-    .select('id, event_id, city_slug, flag_type, severity, lat, lng, note, confirmation_count, status, created_at, expires_at')
-    .eq('city_slug', city)
-    .eq('status', 'approved')
-    .gt('expires_at', new Date().toISOString())
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  if (flagType) q = q.eq('flag_type', flagType);
-  if (since) q = q.gte('created_at', since);
+  const where: Record<string, unknown> = {
+    city_slug: city,
+    status: 'approved',
+    expires_at: { gt: new Date() },
+  };
+  if (flagType) where.flag_type = flagType;
+  if (since) where.created_at = { gte: new Date(since) };
   if (bbox) {
     const parts = bbox.split(',').map(Number);
     if (parts.length === 4 && parts.every(n => Number.isFinite(n))) {
       const [minLng, minLat, maxLng, maxLat] = parts;
-      q = q.gte('lng', minLng).lte('lng', maxLng).gte('lat', minLat).lte('lat', maxLat);
+      where.lng = { gte: minLng, lte: maxLng };
+      where.lat = { gte: minLat, lte: maxLat };
     }
   }
 
-  const { data, error } = await q;
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-
-  return Response.json({ flags: data ?? [] });
+  try {
+    const rows = await prisma.eventFlag.findMany({
+      where,
+      orderBy: { created_at: 'desc' },
+      take: limit,
+    });
+    return Response.json({
+      flags: rows.map(f => ({
+        ...f,
+        lat: Number(f.lat),
+        lng: Number(f.lng),
+        created_at: f.created_at.toISOString(),
+        expires_at: f.expires_at.toISOString(),
+      })),
+    });
+  } catch (err) {
+    return Response.json({ error: (err as Error).message }, { status: 500 });
+  }
 }
 
 interface PostBody {
@@ -97,31 +108,37 @@ export async function POST(req: Request) {
   });
 
   const ttlMinutes = FLAG_TYPE_DISPLAY[body.flag_type].default_ttl_minutes;
-  const expiresAt = new Date(Date.now() + ttlMinutes * 60_000).toISOString();
+  const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
   const noteToStore = review.redacted_note ?? body.note ?? null;
 
-  const { data, error } = await supabase
-    .from('event_flags')
-    .insert({
-      event_id: body.event_id ?? null,
-      city_slug: body.city,
-      flag_type: body.flag_type,
-      severity,
-      lat: body.lat,
-      lng: body.lng,
-      note: noteToStore,
-      reporter_session_id: body.reporter_session_id,
-      status: review.decision === 'approve' ? 'approved' : review.decision === 'block' ? 'blocked' : 'review',
-      safety_review_reasoning: review.reasoning,
-      expires_at: expiresAt,
-    })
-    .select('*')
-    .single();
+  try {
+    const flag = await prisma.eventFlag.create({
+      data: {
+        event_id: body.event_id ?? null,
+        city_slug: body.city,
+        flag_type: body.flag_type,
+        severity,
+        lat: body.lat,
+        lng: body.lng,
+        note: noteToStore,
+        reporter_session_id: body.reporter_session_id,
+        status: review.decision === 'approve' ? 'approved' : review.decision === 'block' ? 'blocked' : 'review',
+        safety_review_reasoning: review.reasoning,
+        expires_at: expiresAt,
+      },
+    });
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-
-  return Response.json({
-    flag: data,
-    review: { decision: review.decision, reasoning: review.reasoning },
-  });
+    return Response.json({
+      flag: {
+        ...flag,
+        lat: Number(flag.lat),
+        lng: Number(flag.lng),
+        created_at: flag.created_at.toISOString(),
+        expires_at: flag.expires_at.toISOString(),
+      },
+      review: { decision: review.decision, reasoning: review.reasoning },
+    });
+  } catch (err) {
+    return Response.json({ error: (err as Error).message }, { status: 500 });
+  }
 }

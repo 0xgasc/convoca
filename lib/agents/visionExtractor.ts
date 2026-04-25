@@ -1,27 +1,19 @@
 // lib/agents/visionExtractor.ts
-// Reference implementation. The other agents follow the same shape:
-//   1. Build prompt from typed input
-//   2. Call Anthropic SDK
-//   3. Validate JSON response (Zod or manual)
-//   4. Persist + log agent_run trace
-//   5. Return typed result or null on failure
-//
-// Use this file as the template for discovery.ts, dedup.ts, recommender.ts,
-// safetyReview.ts, intentParse.ts, harvester.ts.
+// Extracts structured event data from a flyer image. Accepts either a URL
+// or an in-memory Buffer (the latter is used by the submit flow so we never
+// have to persist the user-uploaded image).
 
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { VISION_PROMPT } from './prompts';
 import { logAgentRun } from './traces';
-import { supabase } from '@/lib/supabase';
+import { prisma } from '@/lib/db';
 import { CAUSE_VOCABULARY, EVENT_TYPES, ACTION_TYPES } from '@/lib/constants';
 import type { ExtractedEvent } from '@/lib/types';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
-// -----------------------------------------------------------------------------
-// Output schema — strict validation of the model's JSON
-// -----------------------------------------------------------------------------
+type SupportedMedia = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
 
 const ExtractedEventSchema = z.object({
   is_event: z.boolean(),
@@ -44,22 +36,19 @@ const ExtractedEventSchema = z.object({
   confidence_notes: z.string(),
 });
 
-// -----------------------------------------------------------------------------
-// Input
-// -----------------------------------------------------------------------------
-
 export interface VisionExtractorInput {
-  imageUrl: string;
+  // Provide one of:
+  imageUrl?: string;
+  imageBuffer?: Buffer;
+  imageMediaType?: SupportedMedia;
+  // Optional metadata
   rawPostId?: string;
+  sourceImageUrl?: string;
   city: 'nyc' | 'guatemala_city';
   currentDate: string;
   postText?: string;
   sessionId: string;
 }
-
-// -----------------------------------------------------------------------------
-// Main
-// -----------------------------------------------------------------------------
 
 export async function runVisionExtractor(
   input: VisionExtractorInput
@@ -67,11 +56,19 @@ export async function runVisionExtractor(
   const startedAt = Date.now();
 
   let imageData: string;
-  let mediaType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
-  try {
-    ({ imageData, mediaType } = await fetchImageAsBase64(input.imageUrl));
-  } catch (err) {
-    console.error('[vision] image fetch failed', input.imageUrl, err);
+  let mediaType: SupportedMedia;
+  if (input.imageBuffer) {
+    imageData = input.imageBuffer.toString('base64');
+    mediaType = input.imageMediaType ?? 'image/jpeg';
+  } else if (input.imageUrl) {
+    try {
+      ({ imageData, mediaType } = await fetchImageAsBase64(input.imageUrl));
+    } catch (err) {
+      console.error('[vision] image fetch failed', input.imageUrl, err);
+      return null;
+    }
+  } else {
+    console.error('[vision] no image provided');
     return null;
   }
 
@@ -119,7 +116,7 @@ export async function runVisionExtractor(
     await logAgentRun({
       sessionId: input.sessionId,
       agentName: 'vision_extractor',
-      inputSummary: `image: ${shortUrl(input.imageUrl)}`,
+      inputSummary: `image: ${shortUrl(input.imageUrl ?? 'buffer')}`,
       outputSummary: 'schema_validation_failed',
       reasoningTrace: { rawResponse: parsed, errors: validation.error.issues },
       durationMs: Date.now() - startedAt,
@@ -130,12 +127,11 @@ export async function runVisionExtractor(
 
   const event = validation.data as ExtractedEvent;
 
-  // If the agent says it's not an event, log and bail
   if (!event.is_event) {
     await logAgentRun({
       sessionId: input.sessionId,
       agentName: 'vision_extractor',
-      inputSummary: `image: ${shortUrl(input.imageUrl)}`,
+      inputSummary: `image: ${shortUrl(input.imageUrl ?? 'buffer')}`,
       outputSummary: 'not_an_event',
       reasoningTrace: { confidence_notes: event.confidence_notes },
       durationMs: Date.now() - startedAt,
@@ -144,7 +140,6 @@ export async function runVisionExtractor(
     return event;
   }
 
-  // Geocode if we have a usable location string
   if (event.location_text && event.location_specificity !== 'online' && event.location_specificity !== 'vague') {
     const geocoded = await geocode(event.location_text, input.city);
     if (geocoded) {
@@ -153,18 +148,16 @@ export async function runVisionExtractor(
     }
   }
 
-  // Persist the canonical (pre-dedup) event
   if (input.rawPostId) {
-    const inserted = await supabase
-      .from('events')
-      .insert({
+    const inserted = await prisma.event.create({
+      data: {
         city_slug: input.city,
         title: event.title,
         event_type: event.event_type,
         action_type: event.action_type,
-        datetime_iso: event.datetime_iso,
+        datetime_iso: event.datetime_iso ? new Date(event.datetime_iso) : null,
         datetime_text_raw: event.datetime_text_raw,
-        end_datetime_iso: event.end_datetime_iso,
+        end_datetime_iso: event.end_datetime_iso ? new Date(event.end_datetime_iso) : null,
         location_text: event.location_text,
         location_specificity: event.location_specificity,
         lat: (event as { lat?: number }).lat ?? null,
@@ -173,25 +166,26 @@ export async function runVisionExtractor(
         cause_tags: event.cause_tags,
         language: event.language,
         signup_url: event.signup_url,
+        source_image_url: input.sourceImageUrl ?? input.imageUrl ?? null,
         capacity: event.capacity,
         extraction_confidence: event.confidence,
         status: 'upcoming',
-      })
-      .select('id')
-      .single();
+      },
+      select: { id: true },
+    });
 
-    if (inserted.data) {
-      await supabase.from('event_sources').insert({
-        event_id: inserted.data.id,
+    await prisma.eventSource.create({
+      data: {
+        event_id: inserted.id,
         raw_post_id: input.rawPostId,
-      });
-    }
+      },
+    });
   }
 
   await logAgentRun({
     sessionId: input.sessionId,
     agentName: 'vision_extractor',
-    inputSummary: `image: ${shortUrl(input.imageUrl)}`,
+    inputSummary: `image: ${shortUrl(input.imageUrl ?? 'buffer')}`,
     outputSummary: `${event.title} — ${event.event_type} — conf ${event.confidence.toFixed(2)}`,
     reasoningTrace: event,
     durationMs: Date.now() - startedAt,
@@ -201,20 +195,16 @@ export async function runVisionExtractor(
   return event;
 }
 
-// -----------------------------------------------------------------------------
-// Helpers
-// -----------------------------------------------------------------------------
-
 async function fetchImageAsBase64(url: string): Promise<{
   imageData: string;
-  mediaType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+  mediaType: SupportedMedia;
 }> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`image fetch ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
   const contentType = res.headers.get('content-type') ?? 'image/jpeg';
 
-  let mediaType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' = 'image/jpeg';
+  let mediaType: SupportedMedia = 'image/jpeg';
   if (contentType.includes('png')) mediaType = 'image/png';
   else if (contentType.includes('webp')) mediaType = 'image/webp';
   else if (contentType.includes('gif')) mediaType = 'image/gif';
@@ -223,20 +213,14 @@ async function fetchImageAsBase64(url: string): Promise<{
 }
 
 function safeJsonParse(text: string): unknown | null {
-  // Models sometimes wrap JSON in ```json fences despite instructions
   const cleaned = text.trim().replace(/^```(?:json)?/, '').replace(/```$/, '').trim();
   try {
     return JSON.parse(cleaned);
   } catch {
-    // Last-ditch: find first { and last }
     const first = cleaned.indexOf('{');
     const last = cleaned.lastIndexOf('}');
     if (first >= 0 && last > first) {
-      try {
-        return JSON.parse(cleaned.slice(first, last + 1));
-      } catch {
-        return null;
-      }
+      try { return JSON.parse(cleaned.slice(first, last + 1)); } catch { return null; }
     }
     return null;
   }
@@ -250,6 +234,7 @@ async function geocode(
   query: string,
   city: 'nyc' | 'guatemala_city'
 ): Promise<{ lat: number; lng: number } | null> {
+  if (!process.env.MAPBOX_TOKEN) return null;
   const proximity = city === 'nyc' ? '-74.0060,40.7128' : '-90.5069,14.6349';
   const country = city === 'nyc' ? 'us' : 'gt';
   const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?proximity=${proximity}&country=${country}&access_token=${process.env.MAPBOX_TOKEN}`;

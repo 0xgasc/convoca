@@ -1,14 +1,22 @@
 // app/api/submit/route.ts
-// Community submission endpoint. Accepts image uploads, URLs, or pasted text.
-// Acknowledges within ~2 seconds, processes asynchronously via vision extractor.
-// Result is published to a matching SSE stream by session_id.
+// Community submission endpoint. No image persistence — flyer bytes go straight
+// to the vision agent in-memory. URL/text submissions are processed inline.
 
-import { supabase } from '@/lib/supabase';
+import { prisma } from '@/lib/db';
 import { runVisionExtractor } from '@/lib/agents/visionExtractor';
 import type { CitySlug } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+type ImageMedia = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+
+function pickMediaType(contentType: string): ImageMedia {
+  if (contentType.includes('png')) return 'image/png';
+  if (contentType.includes('webp')) return 'image/webp';
+  if (contentType.includes('gif')) return 'image/gif';
+  return 'image/jpeg';
+}
 
 export async function POST(req: Request) {
   const contentType = req.headers.get('content-type') ?? '';
@@ -17,6 +25,8 @@ export async function POST(req: Request) {
   let payload: string;
   let sessionId: string;
   let city: CitySlug;
+  let imageBuffer: Buffer | undefined;
+  let imageMediaType: ImageMedia | undefined;
 
   if (contentType.includes('multipart/form-data')) {
     const form = await req.formData();
@@ -26,17 +36,9 @@ export async function POST(req: Request) {
 
     if (!file) return badRequest('Missing image file');
     submissionType = 'image_upload';
-
-    // Upload to Supabase Storage bucket "submissions"
-    const buf = Buffer.from(await file.arrayBuffer());
-    const path = `submissions/${sessionId}/${Date.now()}-${file.name}`;
-    const { error: uploadErr } = await supabase.storage
-      .from('submissions')
-      .upload(path, buf, { contentType: file.type });
-    if (uploadErr) return new Response(`Upload failed: ${uploadErr.message}`, { status: 500 });
-
-    const { data: urlData } = supabase.storage.from('submissions').getPublicUrl(path);
-    payload = urlData.publicUrl;
+    imageBuffer = Buffer.from(await file.arrayBuffer());
+    imageMediaType = pickMediaType(file.type);
+    payload = `inline:${file.name}:${imageBuffer.length}b`;
   } else {
     const body = await req.json();
     sessionId = String(body.sessionId ?? '');
@@ -55,25 +57,26 @@ export async function POST(req: Request) {
 
   if (!sessionId) return badRequest('Missing sessionId');
 
-  // Create the submission row
-  const { data: submission, error } = await supabase
-    .from('submissions')
-    .insert({
+  const submission = await prisma.submission.create({
+    data: {
       city_slug: city,
       submitted_by_session: sessionId,
       submission_type: submissionType,
       payload,
       status: 'pending',
-    })
-    .select('id')
-    .single();
+    },
+    select: { id: true },
+  });
 
-  if (error || !submission) {
-    return new Response(`Submission failed: ${error?.message}`, { status: 500 });
-  }
-
-  // Process asynchronously — don't block the response
-  void processSubmission(submission.id, submissionType, payload, city, sessionId);
+  void processSubmission({
+    submissionId: submission.id,
+    submissionType,
+    payload,
+    city,
+    sessionId,
+    imageBuffer,
+    imageMediaType,
+  });
 
   return Response.json({
     submissionId: submission.id,
@@ -82,66 +85,74 @@ export async function POST(req: Request) {
   });
 }
 
-async function processSubmission(
-  submissionId: string,
-  type: 'image_upload' | 'url' | 'text',
-  payload: string,
-  city: CitySlug,
-  sessionId: string,
-): Promise<void> {
+interface ProcessInput {
+  submissionId: string;
+  submissionType: 'image_upload' | 'url' | 'text';
+  payload: string;
+  city: CitySlug;
+  sessionId: string;
+  imageBuffer?: Buffer;
+  imageMediaType?: ImageMedia;
+}
+
+async function processSubmission(input: ProcessInput): Promise<void> {
   try {
-    await supabase.from('submissions').update({ status: 'processing' }).eq('id', submissionId);
+    await prisma.submission.update({
+      where: { id: input.submissionId },
+      data: { status: 'processing' },
+    });
 
-    let imageUrl: string | null = null;
+    const imageBuffer: Buffer | undefined = input.imageBuffer;
+    const imageMediaType: ImageMedia | undefined = input.imageMediaType;
+    let imageUrl: string | undefined;
     let postText: string | undefined;
+    let sourceImageUrl: string | undefined;
 
-    if (type === 'image_upload') {
-      imageUrl = payload;
-    } else if (type === 'url') {
-      // Fetch HTML, pull OG image + meta
-      const meta = await fetchUrlMetadata(payload);
-      imageUrl = meta.imageUrl;
+    if (input.submissionType === 'url') {
+      const meta = await fetchUrlMetadata(input.payload);
+      imageUrl = meta.imageUrl ?? undefined;
+      sourceImageUrl = imageUrl ?? input.payload;
       postText = meta.text;
-    } else if (type === 'text') {
-      postText = payload;
+    } else if (input.submissionType === 'text') {
+      postText = input.payload;
     }
 
-    if (!imageUrl && !postText) {
-      await supabase
-        .from('submissions')
-        .update({ status: 'rejected', rejection_reason: 'No usable content extracted', processed_at: new Date().toISOString() })
-        .eq('id', submissionId);
+    if (!imageBuffer && !imageUrl && !postText) {
+      await prisma.submission.update({
+        where: { id: input.submissionId },
+        data: { status: 'rejected', rejection_reason: 'No usable content extracted', processed_at: new Date() },
+      });
       return;
     }
 
-    if (imageUrl) {
+    if (imageBuffer || imageUrl) {
       const event = await runVisionExtractor({
+        imageBuffer,
+        imageMediaType,
         imageUrl,
-        rawPostId: undefined, // not from a harvested post
-        city,
+        sourceImageUrl,
+        rawPostId: undefined,
+        city: input.city,
         currentDate: new Date().toISOString(),
         postText,
-        sessionId,
+        sessionId: input.sessionId,
       });
 
       if (!event || !event.is_event) {
-        await supabase
-          .from('submissions')
-          .update({ status: 'rejected', rejection_reason: 'Not identified as a civic event', processed_at: new Date().toISOString() })
-          .eq('id', submissionId);
+        await prisma.submission.update({
+          where: { id: input.submissionId },
+          data: { status: 'rejected', rejection_reason: 'Not identified as a civic event', processed_at: new Date() },
+        });
         return;
       }
 
-      // Insert canonical event (skipping dedup for hackathon submission flow;
-      // production should run dedup against recent events here)
-      const { data: inserted } = await supabase
-        .from('events')
-        .insert({
-          city_slug: city,
+      const inserted = await prisma.event.create({
+        data: {
+          city_slug: input.city,
           title: event.title,
           event_type: event.event_type,
           action_type: event.action_type,
-          datetime_iso: event.datetime_iso,
+          datetime_iso: event.datetime_iso ? new Date(event.datetime_iso) : null,
           datetime_text_raw: event.datetime_text_raw,
           location_text: event.location_text,
           location_specificity: event.location_specificity,
@@ -151,33 +162,33 @@ async function processSubmission(
           cause_tags: event.cause_tags,
           language: event.language,
           signup_url: event.signup_url,
+          source_image_url: sourceImageUrl ?? null,
           extraction_confidence: event.confidence,
           status: 'upcoming',
-        })
-        .select('id')
-        .single();
+        },
+        select: { id: true },
+      });
 
-      await supabase
-        .from('submissions')
-        .update({
+      await prisma.submission.update({
+        where: { id: input.submissionId },
+        data: {
           status: 'approved',
-          result_event_id: inserted?.id,
-          processed_at: new Date().toISOString(),
-        })
-        .eq('id', submissionId);
+          result_event_id: inserted.id,
+          processed_at: new Date(),
+        },
+      });
     } else {
-      // Text-only path: defer to a text-based parser (not implemented in MVP)
-      await supabase
-        .from('submissions')
-        .update({ status: 'rejected', rejection_reason: 'Text-only submissions not yet supported', processed_at: new Date().toISOString() })
-        .eq('id', submissionId);
+      await prisma.submission.update({
+        where: { id: input.submissionId },
+        data: { status: 'rejected', rejection_reason: 'Text-only submissions not yet supported', processed_at: new Date() },
+      });
     }
   } catch (err) {
     console.error('[submit] processing failed', err);
-    await supabase
-      .from('submissions')
-      .update({ status: 'rejected', rejection_reason: String(err), processed_at: new Date().toISOString() })
-      .eq('id', submissionId);
+    await prisma.submission.update({
+      where: { id: input.submissionId },
+      data: { status: 'rejected', rejection_reason: String(err), processed_at: new Date() },
+    });
   }
 }
 

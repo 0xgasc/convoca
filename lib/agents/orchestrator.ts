@@ -1,24 +1,6 @@
 // lib/agents/orchestrator.ts
 // SSE-streaming orchestrator. Coordinates the full agent pipeline for a user
 // prompt and emits live status events to the client for the AgentTrace UI.
-//
-// Usage from a route handler:
-//
-//   const stream = new ReadableStream({
-//     async start(controller) {
-//       const emit = (e: AgentEvent) =>
-//         controller.enqueue(`data: ${JSON.stringify(e)}\n\n`);
-//       try {
-//         await orchestrate({ prompt, sessionId, city }, emit);
-//       } catch (err) {
-//         emit({ type: 'error', message: String(err) });
-//       } finally {
-//         emit({ type: 'done' });
-//         controller.close();
-//       }
-//     }
-//   });
-//   return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } });
 
 import { parseIntent } from './intentParse';
 import { runDiscovery } from './discovery';
@@ -26,12 +8,8 @@ import { runHarvester } from './harvester';
 import { runVisionExtractor } from './visionExtractor';
 import { runDedup } from './dedup';
 import { runRecommender } from './recommender';
-import { supabase } from '@/lib/supabase';
+import { prisma } from '@/lib/db';
 import type { ParsedIntent, ExtractedEvent, CanonicalEvent } from '@/lib/types';
-
-// -----------------------------------------------------------------------------
-// Event protocol — the shape of messages streamed to the client
-// -----------------------------------------------------------------------------
 
 export type AgentEvent =
   | { type: 'status'; agent: AgentName; message: string }
@@ -59,18 +37,14 @@ export interface OrchestrateInput {
   sessionId: string;
   city: 'nyc' | 'guatemala_city';
   options?: {
-    skipDiscovery?: boolean;     // demo: usually true (we have seeded sources)
-    skipHarvest?: boolean;       // demo: usually true (we have seeded raw_posts)
-    extractLimit?: number;       // cap vision calls per orchestration (default 8)
-    dedupRecentHours?: number;   // dedup window (default 72)
+    skipDiscovery?: boolean;
+    skipHarvest?: boolean;
+    extractLimit?: number;
+    dedupRecentHours?: number;
   };
 }
 
 type Emit = (event: AgentEvent) => void;
-
-// -----------------------------------------------------------------------------
-// Main orchestrator
-// -----------------------------------------------------------------------------
 
 export async function orchestrate(input: OrchestrateInput, emit: Emit): Promise<void> {
   const opts = {
@@ -80,7 +54,6 @@ export async function orchestrate(input: OrchestrateInput, emit: Emit): Promise<
     dedupRecentHours: input.options?.dedupRecentHours ?? 72,
   };
 
-  // 1. Parse intent
   emit({ type: 'status', agent: 'intent_parse', message: 'Parsing your request...' });
   const intent = await parseIntent({
     userMessage: input.prompt,
@@ -89,7 +62,6 @@ export async function orchestrate(input: OrchestrateInput, emit: Emit): Promise<
   });
   emit({ type: 'intent', intent });
 
-  // 2. Discovery (optional — typically skipped in demo for speed)
   if (!opts.skipDiscovery) {
     emit({ type: 'status', agent: 'discovery', message: 'Scanning for new civic sources...' });
     const newSources = await runDiscovery({
@@ -104,7 +76,6 @@ export async function orchestrate(input: OrchestrateInput, emit: Emit): Promise<
     });
   }
 
-  // 3. Harvest (optional — typically skipped in demo)
   if (!opts.skipHarvest) {
     emit({ type: 'status', agent: 'harvester', message: 'Pulling recent posts from sources...' });
     const harvested = await runHarvester({
@@ -118,7 +89,6 @@ export async function orchestrate(input: OrchestrateInput, emit: Emit): Promise<
     });
   }
 
-  // 4. Vision extraction on unprocessed raw_posts with event signal
   emit({ type: 'status', agent: 'vision_extractor', message: 'Extracting event details from flyers...' });
   const candidatePosts = await fetchUnprocessedEventPosts(input.city, opts.extractLimit);
   const extracted: Array<{ event: ExtractedEvent; rawPostId: string }> = [];
@@ -138,7 +108,6 @@ export async function orchestrate(input: OrchestrateInput, emit: Emit): Promise<
     }
   }
 
-  // 5. Dedup — embed candidates, find near-duplicates, judge with Opus
   emit({ type: 'status', agent: 'dedup', message: 'Merging duplicate events across sources...' });
   await runDedup({
     candidates: extracted,
@@ -156,7 +125,6 @@ export async function orchestrate(input: OrchestrateInput, emit: Emit): Promise<
     },
   });
 
-  // 6. Recommend — rank canonical events for user
   emit({ type: 'status', agent: 'recommender', message: 'Ranking events for you...' });
   const ranked = await runRecommender({
     userPrefs: await fetchUserPrefs(input.sessionId),
@@ -179,64 +147,69 @@ export async function orchestrate(input: OrchestrateInput, emit: Emit): Promise<
   });
 }
 
-// -----------------------------------------------------------------------------
-// Supabase helpers
-// -----------------------------------------------------------------------------
-
 async function fetchUnprocessedEventPosts(city: string, limit: number) {
-  const { data, error } = await supabase
-    .from('raw_posts')
-    .select('id, text_content, image_urls, source_id, sources!inner(city_slug)')
-    .eq('has_event_signal', true)
-    .eq('sources.city_slug', city)
-    .not('id', 'in', supabase.from('event_sources').select('raw_post_id'))
-    .order('posted_at', { ascending: false })
-    .limit(limit);
+  const usedRawPostIds = await prisma.eventSource.findMany({ select: { raw_post_id: true } });
+  const usedSet = new Set(usedRawPostIds.map(r => r.raw_post_id));
 
-  if (error) throw error;
-  return data ?? [];
+  const posts = await prisma.rawPost.findMany({
+    where: {
+      has_event_signal: true,
+      source: { city_slug: city },
+    },
+    select: { id: true, text_content: true, image_urls: true, source_id: true },
+    orderBy: { posted_at: 'desc' },
+    take: Math.max(limit * 3, limit + 10),
+  });
+
+  return posts.filter(p => !usedSet.has(p.id)).slice(0, limit);
 }
 
 async function fetchUserPrefs(sessionId: string) {
-  const { data } = await supabase
-    .from('user_sessions')
-    .select('cause_prefs, action_prefs, neighborhood, language')
-    .eq('id', sessionId)
-    .single();
+  const session = await prisma.userSession.findUnique({
+    where: { id: sessionId },
+    select: { cause_prefs: true, action_prefs: true, neighborhood: true, language: true },
+  });
 
   return {
-    cause_prefs: data?.cause_prefs ?? [],
-    action_prefs: data?.action_prefs ?? ['attend'],
-    neighborhood: data?.neighborhood ?? null,
-    language: (data?.language ?? 'en') as 'en' | 'es',
+    cause_prefs: (session?.cause_prefs ?? []) as ParsedIntent['cause_tags'],
+    action_prefs: session?.action_prefs ?? ['attend'],
+    neighborhood: session?.neighborhood ?? null,
+    language: (session?.language ?? 'en') as 'en' | 'es',
   };
 }
 
 async function fetchEventsForIntent(intent: ParsedIntent, city: string) {
-  let q = supabase
-    .from('events')
-    .select('id, title, event_type, action_type, datetime_iso, location_text, organizer, cause_tags, lat, lng')
-    .eq('city_slug', city)
-    .eq('status', 'upcoming');
+  const where: Parameters<typeof prisma.event.findMany>[0] extends infer P
+    ? P extends { where?: infer W } ? W : never : never = {
+    city_slug: city,
+    status: 'upcoming',
+  };
 
-  if (intent.cause_tags.length > 0) {
-    q = q.overlaps('cause_tags', intent.cause_tags);
-  }
-  if (intent.event_types.length > 0) {
-    q = q.in('event_type', intent.event_types);
-  }
-  if (intent.date_range_start) {
-    q = q.gte('datetime_iso', intent.date_range_start);
-  }
-  if (intent.date_range_end) {
-    q = q.lte('datetime_iso', intent.date_range_end);
-  }
+  if (intent.cause_tags.length > 0) where.cause_tags = { hasSome: intent.cause_tags };
+  if (intent.event_types.length > 0) where.event_type = { in: intent.event_types };
+  if (intent.date_range_start) where.datetime_iso = { ...(where.datetime_iso as object), gte: new Date(intent.date_range_start) };
+  if (intent.date_range_end) where.datetime_iso = { ...(where.datetime_iso as object), lte: new Date(intent.date_range_end) };
 
-  const { data, error } = await q.order('datetime_iso').limit(20);
-  if (error) throw error;
+  const rows = await prisma.event.findMany({
+    where,
+    select: {
+      id: true, title: true, event_type: true, action_type: true,
+      datetime_iso: true, location_text: true, organizer: true, cause_tags: true,
+      lat: true, lng: true,
+    },
+    orderBy: { datetime_iso: 'asc' },
+    take: 20,
+  });
 
-  return (data ?? []).map(e => ({
-    ...e,
-    distance_km: null, // computed downstream if neighborhood geocoded
+  return rows.map(e => ({
+    id: e.id,
+    title: e.title,
+    event_type: e.event_type,
+    action_type: e.action_type,
+    datetime_iso: e.datetime_iso ? e.datetime_iso.toISOString() : null,
+    location_text: e.location_text ?? '',
+    organizer: e.organizer,
+    cause_tags: e.cause_tags,
+    distance_km: null,
   }));
 }

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { prisma } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,24 +14,20 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
   if (!sessionId) return Response.json({ error: 'sessionId required' }, { status: 400 });
 
-  const { data: existing, error: fetchErr } = await supabase
-    .from('event_flags')
-    .select('id, confirmation_count, reporter_session_id')
-    .eq('id', id)
-    .maybeSingle();
-  if (fetchErr) return Response.json({ error: fetchErr.message }, { status: 500 });
+  const existing = await prisma.eventFlag.findUnique({
+    where: { id },
+    select: { id: true, confirmation_count: true, reporter_session_id: true },
+  });
   if (!existing) return Response.json({ error: 'not found' }, { status: 404 });
   if (existing.reporter_session_id === sessionId) {
     return Response.json({ error: 'cannot confirm own flag' }, { status: 400 });
   }
 
-  const { data, error } = await supabase
-    .from('event_flags')
-    .update({ confirmation_count: (existing.confirmation_count ?? 1) + 1 })
-    .eq('id', id)
-    .select('id, confirmation_count')
-    .single();
+  const updated = await prisma.eventFlag.update({
+    where: { id },
+    data: { confirmation_count: { increment: 1 } },
+    select: { id: true, confirmation_count: true },
+  });
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-  return Response.json({ flag: data });
+  return Response.json({ flag: updated });
 }

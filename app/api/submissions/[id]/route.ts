@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { prisma } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -7,14 +7,14 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const { id } = params;
   if (!id) return Response.json({ error: 'id required' }, { status: 400 });
 
-  const { data, error } = await supabase
-    .from('submissions')
-    .select('id, city_slug, submission_type, status, result_event_id, rejection_reason, created_at, processed_at')
-    .eq('id', id)
-    .maybeSingle();
+  const sub = await prisma.submission.findUnique({ where: { id } });
+  if (!sub) return Response.json({ error: 'not found' }, { status: 404 });
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-  if (!data) return Response.json({ error: 'not found' }, { status: 404 });
-
-  return Response.json({ submission: data });
+  return Response.json({
+    submission: {
+      ...sub,
+      created_at: sub.created_at.toISOString(),
+      processed_at: sub.processed_at?.toISOString() ?? null,
+    },
+  });
 }

@@ -7,7 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { SAFETY_REVIEW_PROMPT } from './prompts';
 import { logAgentRun } from './traces';
-import { supabase } from '@/lib/supabase';
+import { prisma } from '@/lib/db';
 import type { CitySlug, FlagType, SafetyReviewResult } from '@/lib/types';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
@@ -28,7 +28,6 @@ export interface SafetyReviewInput {
 export async function runSafetyReview(input: SafetyReviewInput): Promise<SafetyReviewResult> {
   const startedAt = Date.now();
 
-  // Gather context for the review
   const sessionAgeMinutes = await getSessionAgeMinutes(input.reporterSessionId);
   const recentFlagsCount = await countRecentFlagsBySession(input.reporterSessionId);
 
@@ -51,8 +50,6 @@ export async function runSafetyReview(input: SafetyReviewInput): Promise<SafetyR
   const parsed = safeJsonParse(rawText);
   const validation = ReviewSchema.safeParse(parsed);
 
-  // Default-approve on validation failure to preserve safety info value.
-  // Defensive default: only block on explicit "block" decision.
   const result: SafetyReviewResult = validation.success
     ? validation.data
     : { decision: 'approve', reasoning: 'Review agent failed; defaulting to approve.', redacted_note: null };
@@ -71,24 +68,23 @@ export async function runSafetyReview(input: SafetyReviewInput): Promise<SafetyR
 }
 
 async function getSessionAgeMinutes(sessionId: string): Promise<number> {
-  const { data } = await supabase
-    .from('user_sessions')
-    .select('created_at')
-    .eq('id', sessionId)
-    .single();
-  if (!data?.created_at) return 0;
-  const age = Date.now() - new Date(data.created_at).getTime();
+  const session = await prisma.userSession.findUnique({
+    where: { id: sessionId },
+    select: { created_at: true },
+  });
+  if (!session?.created_at) return 0;
+  const age = Date.now() - session.created_at.getTime();
   return Math.floor(age / 60000);
 }
 
 async function countRecentFlagsBySession(sessionId: string): Promise<number> {
-  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const { count } = await supabase
-    .from('event_flags')
-    .select('*', { count: 'exact', head: true })
-    .eq('reporter_session_id', sessionId)
-    .gte('created_at', since);
-  return count ?? 0;
+  const since = new Date(Date.now() - 60 * 60 * 1000);
+  return prisma.eventFlag.count({
+    where: {
+      reporter_session_id: sessionId,
+      created_at: { gte: since },
+    },
+  });
 }
 
 function safeJsonParse(text: string): unknown | null {

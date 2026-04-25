@@ -1,6 +1,6 @@
 // lib/agents/dedup.ts
 // Two-stage dedup:
-//   1. pgvector embedding shortlist of candidates within recent_hours window
+//   1. Recent-window candidate shortlist (city + recent_hours)
 //   2. Opus judges each candidate pair, emits visible reasoning trace
 // The reasoning trace is the demo wow — render it in the UI.
 
@@ -8,7 +8,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { DEDUP_PROMPT } from './prompts';
 import { logAgentRun } from './traces';
-import { supabase } from '@/lib/supabase';
+import { prisma } from '@/lib/db';
 import type { CanonicalEvent, ExtractedEvent, CitySlug } from '@/lib/types';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
@@ -38,30 +38,23 @@ export interface DedupInput {
 }
 
 export async function runDedup(input: DedupInput): Promise<CanonicalEvent[]> {
-  // For each fresh candidate, find nearby existing events via embedding similarity.
-  // Then ask Opus whether each near-match is the same event.
   const results: CanonicalEvent[] = [];
 
   for (const cand of input.candidates) {
-    // 1. Persist as candidate event first (may be deleted/merged after dedup)
     const candidateId = await insertCandidateEvent(cand.event, input.city, cand.rawPostId);
     if (!candidateId) continue;
 
-    // 2. Find existing events within recent_hours that overlap on cause or proximity
     const nearby = await findNearbyEvents(candidateId, input.city, input.recentHours);
     if (nearby.length === 0) {
-      // No candidates → keep as standalone canonical event
       const canonical = await fetchEvent(candidateId);
       if (canonical) results.push(canonical);
       continue;
     }
 
-    // 3. Judge each pair
     let mergedInto: CanonicalEvent | null = null;
     for (const existing of nearby) {
       const judgment = await judgePair(cand.event, existing, input.language, input.sessionId);
       if (judgment?.same_event && judgment.confidence > 0.75) {
-        // Merge candidate INTO the existing canonical event
         await mergeCandidateInto(candidateId, existing.id);
         mergedInto = existing;
         if (input.onMerge) {
@@ -142,34 +135,38 @@ async function insertCandidateEvent(
   city: CitySlug,
   rawPostId: string
 ): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('events')
-    .insert({
-      city_slug: city,
-      title: e.title,
-      event_type: e.event_type,
-      action_type: e.action_type,
-      datetime_iso: e.datetime_iso,
-      datetime_text_raw: e.datetime_text_raw,
-      end_datetime_iso: e.end_datetime_iso,
-      location_text: e.location_text,
-      location_specificity: e.location_specificity,
-      lat: e.lat ?? null,
-      lng: e.lng ?? null,
-      organizer: e.organizer,
-      cause_tags: e.cause_tags,
-      language: e.language,
-      signup_url: e.signup_url,
-      capacity: e.capacity,
-      extraction_confidence: e.confidence,
-      status: 'upcoming',
-    })
-    .select('id')
-    .single();
-
-  if (error || !data) return null;
-  await supabase.from('event_sources').insert({ event_id: data.id, raw_post_id: rawPostId });
-  return data.id;
+  try {
+    const inserted = await prisma.event.create({
+      data: {
+        city_slug: city,
+        title: e.title,
+        event_type: e.event_type,
+        action_type: e.action_type,
+        datetime_iso: e.datetime_iso ? new Date(e.datetime_iso) : null,
+        datetime_text_raw: e.datetime_text_raw,
+        end_datetime_iso: e.end_datetime_iso ? new Date(e.end_datetime_iso) : null,
+        location_text: e.location_text,
+        location_specificity: e.location_specificity,
+        lat: e.lat ?? null,
+        lng: e.lng ?? null,
+        organizer: e.organizer,
+        cause_tags: e.cause_tags,
+        language: e.language,
+        signup_url: e.signup_url,
+        capacity: e.capacity,
+        extraction_confidence: e.confidence,
+        status: 'upcoming',
+      },
+      select: { id: true },
+    });
+    await prisma.eventSource.create({
+      data: { event_id: inserted.id, raw_post_id: rawPostId },
+    });
+    return inserted.id;
+  } catch (err) {
+    console.error('[dedup] insertCandidate failed', err);
+    return null;
+  }
 }
 
 async function findNearbyEvents(
@@ -177,37 +174,66 @@ async function findNearbyEvents(
   city: CitySlug,
   recentHours: number
 ): Promise<CanonicalEvent[]> {
-  const since = new Date(Date.now() - recentHours * 60 * 60 * 1000).toISOString();
-  const { data } = await supabase
-    .from('events')
-    .select('*')
-    .eq('city_slug', city)
-    .neq('id', candidateId)
-    .gte('created_at', since)
-    .limit(10);
-  return (data ?? []) as CanonicalEvent[];
+  const since = new Date(Date.now() - recentHours * 60 * 60 * 1000);
+  const rows = await prisma.event.findMany({
+    where: {
+      city_slug: city,
+      created_at: { gte: since },
+      NOT: { id: candidateId },
+    },
+    take: 10,
+  });
+  return rows.map(rowToCanonical);
 }
 
 async function mergeCandidateInto(candidateId: string, canonicalId: string) {
-  // Reassign event_sources rows from candidate → canonical, then delete candidate.
-  await supabase
-    .from('event_sources')
-    .update({ event_id: canonicalId })
-    .eq('event_id', candidateId);
-  await supabase.from('events').delete().eq('id', candidateId);
+  await prisma.eventSource.updateMany({
+    where: { event_id: candidateId },
+    data: { event_id: canonicalId },
+  });
+  await prisma.event.delete({ where: { id: candidateId } });
 }
 
 async function fetchEvent(id: string): Promise<CanonicalEvent | null> {
-  const { data } = await supabase.from('events').select('*').eq('id', id).single();
-  return (data as CanonicalEvent) ?? null;
+  const row = await prisma.event.findUnique({ where: { id } });
+  return row ? rowToCanonical(row) : null;
 }
 
 async function countSourcesForEvent(eventId: string): Promise<number> {
-  const { count } = await supabase
-    .from('event_sources')
-    .select('*', { count: 'exact', head: true })
-    .eq('event_id', eventId);
-  return count ?? 0;
+  return prisma.eventSource.count({ where: { event_id: eventId } });
+}
+
+function rowToCanonical(row: {
+  id: string; city_slug: string | null; title: string; event_type: string; action_type: string;
+  datetime_iso: Date | null; datetime_text_raw: string | null; end_datetime_iso: Date | null;
+  location_text: string | null; location_specificity: string | null;
+  lat: unknown; lng: unknown; organizer: string | null; cause_tags: string[]; language: string;
+  signup_url: string | null; capacity: number | null; signup_deadline: Date | null;
+  status: string; extraction_confidence: unknown; created_at: Date;
+}): CanonicalEvent {
+  return {
+    id: row.id,
+    city_slug: (row.city_slug ?? 'nyc') as CanonicalEvent['city_slug'],
+    title: row.title,
+    event_type: row.event_type as CanonicalEvent['event_type'],
+    action_type: row.action_type as CanonicalEvent['action_type'],
+    datetime_iso: row.datetime_iso ? row.datetime_iso.toISOString() : null,
+    datetime_text_raw: row.datetime_text_raw ?? '',
+    end_datetime_iso: row.end_datetime_iso ? row.end_datetime_iso.toISOString() : null,
+    location_text: row.location_text ?? '',
+    location_specificity: (row.location_specificity ?? 'vague') as CanonicalEvent['location_specificity'],
+    lat: row.lat == null ? null : Number(row.lat),
+    lng: row.lng == null ? null : Number(row.lng),
+    organizer: row.organizer,
+    cause_tags: row.cause_tags as CanonicalEvent['cause_tags'],
+    language: row.language as CanonicalEvent['language'],
+    signup_url: row.signup_url,
+    capacity: row.capacity,
+    signup_deadline: row.signup_deadline ? row.signup_deadline.toISOString() : null,
+    status: row.status as CanonicalEvent['status'],
+    extraction_confidence: row.extraction_confidence == null ? null : Number(row.extraction_confidence),
+    created_at: row.created_at.toISOString(),
+  };
 }
 
 function safeJsonParse(text: string): unknown | null {

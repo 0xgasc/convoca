@@ -2,7 +2,8 @@
 // Persists every agent run for the live demo trace panel and basic observability.
 // Used by all agents — the visible reasoning is the product, not debug output.
 
-import { supabase } from '@/lib/supabase';
+import { Prisma } from '@prisma/client';
+import { prisma } from '@/lib/db';
 
 export interface AgentRunInput {
   sessionId: string;
@@ -16,14 +17,16 @@ export interface AgentRunInput {
 
 export async function logAgentRun(input: AgentRunInput): Promise<void> {
   try {
-    await supabase.from('agent_runs').insert({
-      session_id: input.sessionId,
-      agent_name: input.agentName,
-      input_summary: input.inputSummary,
-      output_summary: input.outputSummary,
-      reasoning_trace: input.reasoningTrace,
-      duration_ms: input.durationMs,
-      model: input.model,
+    await prisma.agentRun.create({
+      data: {
+        session_id: input.sessionId,
+        agent_name: input.agentName,
+        input_summary: input.inputSummary,
+        output_summary: input.outputSummary,
+        reasoning_trace: (input.reasoningTrace ?? Prisma.JsonNull) as Prisma.InputJsonValue,
+        duration_ms: input.durationMs,
+        model: input.model,
+      },
     });
   } catch (err) {
     console.error('[traces] failed to log agent run', err);

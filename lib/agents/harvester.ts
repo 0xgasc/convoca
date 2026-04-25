@@ -1,27 +1,14 @@
 // lib/agents/harvester.ts
 // Tiered, adapter-based ingestion. Each `ingest_method` has a corresponding
-// adapter that knows how to talk to that source kind. The harvester polls
-// `sources` rows whose `last_polled_at` is older than `poll_interval_minutes`
-// and dispatches to the right adapter.
-//
-// Adapters in V1 (all free):
-//   rss, ics, mobilize_api, action_network_rss, nyc_open_data, legistar_api,
-//   submission
-//
-// Adapters in V2:
-//   telegram_public, eventbrite_api, website_scrape
+// adapter that knows how to talk to that source kind.
 
 import Anthropic from '@anthropic-ai/sdk';
 import { HARVESTER_PROMPT } from './prompts';
 import { logAgentRun } from './traces';
-import { supabase } from '@/lib/supabase';
+import { prisma } from '@/lib/db';
 import type { SourceRow, NewRawPost, IngestMethod } from '@/lib/types';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-
-// -----------------------------------------------------------------------------
-// Adapter interface
-// -----------------------------------------------------------------------------
 
 export interface AdapterResult {
   posts: NewRawPost[];
@@ -31,10 +18,6 @@ export interface AdapterResult {
 export interface SourceAdapter {
   fetch(source: SourceRow): Promise<AdapterResult>;
 }
-
-// -----------------------------------------------------------------------------
-// V1 adapters — minimal implementations, expand as needed
-// -----------------------------------------------------------------------------
 
 const rssAdapter: SourceAdapter = {
   async fetch(source) {
@@ -79,7 +62,6 @@ const icsAdapter: SourceAdapter = {
 const mobilizeApiAdapter: SourceAdapter = {
   async fetch(source) {
     if (!source.source_url) return { posts: [] };
-    // source_url is like https://www.mobilize.us/{org_slug}/
     const orgSlug = extractMobilizeSlug(source.source_url);
     if (!orgSlug) return { posts: [] };
     const url = `https://api.mobilize.us/v1/organizations/${orgSlug}/events?per_page=25`;
@@ -100,11 +82,10 @@ const mobilizeApiAdapter: SourceAdapter = {
   },
 };
 
-const actionNetworkRssAdapter: SourceAdapter = rssAdapter; // AN exposes events as RSS
+const actionNetworkRssAdapter: SourceAdapter = rssAdapter;
 
 const nycOpenDataAdapter: SourceAdapter = {
   async fetch(source) {
-    // NYC Permitted Event Information dataset via Socrata
     const url = 'https://data.cityofnewyork.us/resource/tvpp-9vvx.json?$limit=100&$order=start_date_time%20DESC';
     const res = await fetch(url);
     if (!res.ok) return { posts: [] };
@@ -124,7 +105,6 @@ const nycOpenDataAdapter: SourceAdapter = {
 
 const legistarApiAdapter: SourceAdapter = {
   async fetch(source) {
-    // NYC Council hearings + stated meetings via Legistar API
     const url = 'https://webapi.legistar.com/v1/nyc/Events?$top=50&$orderby=EventDate%20desc';
     const res = await fetch(url);
     if (!res.ok) return { posts: [] };
@@ -142,35 +122,10 @@ const legistarApiAdapter: SourceAdapter = {
   },
 };
 
-const submissionAdapter: SourceAdapter = {
-  async fetch() {
-    // Submissions are pulled from the `submissions` table by a separate worker.
-    // This adapter is here for completeness so the source row exists.
-    return { posts: [] };
-  },
-};
-
-// V2 adapters — implement when prioritized
-const telegramPublicAdapter: SourceAdapter = {
-  async fetch() {
-    // TODO: use Telegram Bot API getUpdates for public channels
-    return { posts: [] };
-  },
-};
-
-const eventbriteApiAdapter: SourceAdapter = {
-  async fetch() {
-    // TODO: Eventbrite API key required, organization-events endpoint
-    return { posts: [] };
-  },
-};
-
-const websiteScrapeAdapter: SourceAdapter = {
-  async fetch() {
-    // TODO: per-source HTML parsing, last resort
-    return { posts: [] };
-  },
-};
+const submissionAdapter: SourceAdapter = { async fetch() { return { posts: [] }; } };
+const telegramPublicAdapter: SourceAdapter = { async fetch() { return { posts: [] }; } };
+const eventbriteApiAdapter: SourceAdapter = { async fetch() { return { posts: [] }; } };
+const websiteScrapeAdapter: SourceAdapter = { async fetch() { return { posts: [] }; } };
 
 const adapters: Record<IngestMethod, SourceAdapter> = {
   rss: rssAdapter,
@@ -184,10 +139,6 @@ const adapters: Record<IngestMethod, SourceAdapter> = {
   eventbrite_api: eventbriteApiAdapter,
   website_scrape: websiteScrapeAdapter,
 };
-
-// -----------------------------------------------------------------------------
-// Main entry point
-// -----------------------------------------------------------------------------
 
 export interface HarvesterRunInput {
   city?: 'nyc' | 'guatemala_city';
@@ -217,21 +168,19 @@ export async function runHarvester(input: HarvesterRunInput): Promise<HarvesterR
         continue;
       }
 
-      // Persist raw posts (de-dup on external_id)
       const inserted = await persistRawPosts(result.posts);
       totalPosts += inserted.length;
 
-      // Triage classification (Haiku — cheap)
       for (const post of inserted) {
         const hasEventSignal = await classifyEventSignal({
-          text_content: post.text_content ?? null,
-          image_urls: post.image_urls ?? [],
+          text_content: post.text_content,
+          image_urls: post.image_urls,
         });
         if (hasEventSignal) eventCandidates += 1;
-        await supabase
-          .from('raw_posts')
-          .update({ has_event_signal: hasEventSignal })
-          .eq('id', post.id);
+        await prisma.rawPost.update({
+          where: { id: post.id },
+          data: { has_event_signal: hasEventSignal },
+        });
       }
 
       await markPolled(source.id);
@@ -253,10 +202,6 @@ export async function runHarvester(input: HarvesterRunInput): Promise<HarvesterR
   return { totalPosts, eventCandidates };
 }
 
-// -----------------------------------------------------------------------------
-// Triage classifier (Haiku)
-// -----------------------------------------------------------------------------
-
 async function classifyEventSignal(post: { text_content?: string | null; image_urls: string[] }): Promise<boolean> {
   if (!post.text_content && post.image_urls.length === 0) return false;
   const prompt = HARVESTER_PROMPT({
@@ -277,48 +222,91 @@ async function classifyEventSignal(post: { text_content?: string | null; image_u
   }
 }
 
-// -----------------------------------------------------------------------------
-// Supabase helpers
-// -----------------------------------------------------------------------------
-
 async function fetchSourcesDueForPolling(city?: string): Promise<SourceRow[]> {
   const now = new Date();
-  let q = supabase
-    .from('sources')
-    .select('*')
-    .eq('monitoring_status', 'active')
-    .neq('ingest_method', 'submission');
-  if (city) q = q.eq('city_slug', city);
-
-  const { data } = await q.limit(20);
-  return (data ?? []).filter((s: SourceRow) => {
-    if (!s.last_polled_at) return true;
-    const due = new Date(s.last_polled_at);
-    due.setMinutes(due.getMinutes() + s.poll_interval_minutes);
-    return now >= due;
-  }) as SourceRow[];
+  const rows = await prisma.source.findMany({
+    where: {
+      monitoring_status: 'active',
+      NOT: { ingest_method: 'submission' },
+      ...(city ? { city_slug: city } : {}),
+    },
+    take: 20,
+  });
+  return rows
+    .filter(s => {
+      if (!s.last_polled_at) return true;
+      const due = new Date(s.last_polled_at);
+      due.setMinutes(due.getMinutes() + s.poll_interval_minutes);
+      return now >= due;
+    })
+    .map(rowToSource);
 }
 
-async function persistRawPosts(posts: NewRawPost[]): Promise<Array<NewRawPost & { id: string }>> {
-  if (posts.length === 0) return [];
-  const { data } = await supabase
-    .from('raw_posts')
-    .upsert(posts, { onConflict: 'external_id', ignoreDuplicates: true })
-    .select('*');
-  return (data ?? []) as Array<NewRawPost & { id: string }>;
+async function persistRawPosts(posts: NewRawPost[]) {
+  if (posts.length === 0) return [] as Array<{ id: string; text_content: string | null; image_urls: string[] }>;
+  const inserted: Array<{ id: string; text_content: string | null; image_urls: string[] }> = [];
+  for (const p of posts) {
+    if (!p.source_id) continue;
+    // Manual upsert — skip if same source+external_id already present
+    if (p.external_id) {
+      const existing = await prisma.rawPost.findFirst({
+        where: { source_id: p.source_id, external_id: p.external_id },
+        select: { id: true, text_content: true, image_urls: true },
+      });
+      if (existing) {
+        inserted.push(existing);
+        continue;
+      }
+    }
+    const created = await prisma.rawPost.create({
+      data: {
+        source_id: p.source_id,
+        external_id: p.external_id,
+        url: p.url,
+        posted_at: p.posted_at ? new Date(p.posted_at) : null,
+        text_content: p.text_content,
+        image_urls: p.image_urls ?? [],
+      },
+      select: { id: true, text_content: true, image_urls: true },
+    });
+    inserted.push(created);
+  }
+  return inserted;
 }
 
 async function markPolled(sourceId: string) {
-  await supabase
-    .from('sources')
-    .update({ last_polled_at: new Date().toISOString() })
-    .eq('id', sourceId);
+  await prisma.source.update({
+    where: { id: sourceId },
+    data: { last_polled_at: new Date() },
+  });
 }
 
-// -----------------------------------------------------------------------------
-// Minimal RSS / ICS parsers (no external deps for hackathon)
-// For production, swap in `rss-parser` and `ical.js`.
-// -----------------------------------------------------------------------------
+function rowToSource(s: {
+  id: string; city_slug: string | null; borough: string | null; ingest_method: string;
+  source_url: string | null; display_name: string; bio: string | null;
+  civic_relevance: unknown; source_category: string[]; primary_causes: string[];
+  language: string; monitoring_status: string; poll_interval_minutes: number;
+  last_polled_at: Date | null; discovered_via: string | null; created_at: Date;
+}): SourceRow {
+  return {
+    id: s.id,
+    city_slug: (s.city_slug ?? 'nyc') as SourceRow['city_slug'],
+    borough: s.borough as SourceRow['borough'],
+    ingest_method: s.ingest_method as IngestMethod,
+    source_url: s.source_url,
+    display_name: s.display_name,
+    bio: s.bio,
+    civic_relevance: s.civic_relevance == null ? null : Number(s.civic_relevance),
+    source_category: s.source_category,
+    primary_causes: s.primary_causes as SourceRow['primary_causes'],
+    language: s.language as SourceRow['language'],
+    monitoring_status: s.monitoring_status as SourceRow['monitoring_status'],
+    poll_interval_minutes: s.poll_interval_minutes,
+    last_polled_at: s.last_polled_at ? s.last_polled_at.toISOString() : null,
+    discovered_via: s.discovered_via,
+    created_at: s.created_at.toISOString(),
+  };
+}
 
 interface RssItem { guid?: string; link?: string; pubDate?: string; description?: string; imageUrl?: string }
 function parseRssItems(xml: string): RssItem[] {
@@ -375,35 +363,19 @@ function extractMobilizeSlug(url: string): string | null {
   return m?.[1] ?? null;
 }
 
-// -----------------------------------------------------------------------------
-// Adapter response types
-// -----------------------------------------------------------------------------
-
 interface MobilizeEvent {
-  id: number;
-  title: string;
-  description?: string;
-  browser_url: string;
-  created_date: number;
-  featured_image_url?: string;
+  id: number; title: string; description?: string; browser_url: string;
+  created_date: number; featured_image_url?: string;
   location?: { address_lines?: string[] };
 }
 
 interface NycPermittedEvent {
-  event_id: string;
-  event_name: string;
-  event_type?: string;
-  start_date_time: string;
-  end_date_time?: string;
-  event_location?: string;
-  event_borough?: string;
+  event_id: string; event_name: string; event_type?: string;
+  start_date_time: string; end_date_time?: string;
+  event_location?: string; event_borough?: string;
 }
 
 interface LegistarEvent {
-  EventId: number;
-  EventBodyName: string;
-  EventDate: string;
-  EventTime?: string;
-  EventLocation?: string;
-  EventComment?: string;
+  EventId: number; EventBodyName: string; EventDate: string;
+  EventTime?: string; EventLocation?: string; EventComment?: string;
 }

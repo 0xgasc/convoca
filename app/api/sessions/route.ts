@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { prisma } from '@/lib/db';
 import type { CitySlug } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -19,12 +19,13 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const id = url.searchParams.get('id');
   if (!id) return Response.json({ error: 'id required' }, { status: 400 });
-  const { data } = await supabase
-    .from('user_sessions')
-    .select('*')
-    .eq('id', id)
-    .maybeSingle();
-  return Response.json({ session: data ?? null });
+  const session = await prisma.userSession.findUnique({ where: { id } });
+  return Response.json({
+    session: session && {
+      ...session,
+      created_at: session.created_at.toISOString(),
+    },
+  });
 }
 
 export async function POST(req: Request) {
@@ -39,8 +40,7 @@ export async function POST(req: Request) {
     return Response.json({ error: 'invalid city_slug' }, { status: 400 });
   }
 
-  const row = {
-    id: body.id,
+  const data = {
     city_slug: body.city_slug ?? 'nyc',
     cause_prefs: body.cause_prefs ?? [],
     action_prefs: body.action_prefs ?? ['attend'],
@@ -48,12 +48,16 @@ export async function POST(req: Request) {
     neighborhood: body.neighborhood ?? null,
   };
 
-  const { data, error } = await supabase
-    .from('user_sessions')
-    .upsert(row, { onConflict: 'id' })
-    .select('*')
-    .single();
-
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-  return Response.json({ session: data });
+  try {
+    const session = await prisma.userSession.upsert({
+      where: { id: body.id },
+      create: { id: body.id, ...data },
+      update: data,
+    });
+    return Response.json({
+      session: { ...session, created_at: session.created_at.toISOString() },
+    });
+  } catch (err) {
+    return Response.json({ error: (err as Error).message }, { status: 500 });
+  }
 }

@@ -1,16 +1,16 @@
 // scripts/seed-nyc-sources.ts
-// Loads the NYC source registry into Supabase. Idempotent — uses upsert on
-// (ingest_method, source_url) so re-running is safe.
+// Loads the NYC + Guate source registries into Railway Postgres via Prisma.
+// Idempotent — uses upsert on (ingest_method, source_url) for sources with URLs,
+// and a dedupe-by-name check for submission-only sources.
 //
-// Run with: npx tsx scripts/seed-nyc-sources.ts
+// Run with: npm run seed:sources
 
-import { createClient } from '@supabase/supabase-js';
-import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
+loadEnv({ path: '.env.local' });
+loadEnv();
+import { PrismaClient } from '@prisma/client';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+const prisma = new PrismaClient();
 
 interface SeedSource {
   city_slug: 'nyc' | 'guatemala_city';
@@ -82,7 +82,6 @@ const NYC_SOURCES: SeedSource[] = [
   { city_slug: 'nyc', borough: 'staten_island', ingest_method: 'rss', source_url: 'https://snug-harbor.org/feed', display_name: 'Snug Harbor Cultural Center', source_category: ['arts'], primary_causes: ['arts_culture'], language: 'en' },
 ];
 
-// Guate seed sources — minimal hand-picked starter set
 const GUATE_SOURCES: SeedSource[] = [
   { city_slug: 'guatemala_city', ingest_method: 'submission', source_url: null, display_name: 'Codeca', source_category: ['protest_org'], primary_causes: ['indigenous_rights', 'labor'], language: 'es' },
   { city_slug: 'guatemala_city', ingest_method: 'submission', source_url: null, display_name: 'Movimiento Semilla aligned orgs', source_category: ['protest_org'], primary_causes: ['anti_corruption'], language: 'es' },
@@ -92,32 +91,40 @@ async function seed() {
   const all = [...NYC_SOURCES, ...GUATE_SOURCES];
   console.log(`Seeding ${all.length} sources...`);
 
-  // Upsert by (ingest_method, source_url) — null source_urls are inserted only if not already present by display_name
+  let created = 0;
+  let skipped = 0;
+
   for (const src of all) {
     if (src.source_url) {
-      const { error } = await supabase
-        .from('sources')
-        .upsert(src, { onConflict: 'ingest_method,source_url' });
-      if (error) console.error(`Failed to seed ${src.display_name}:`, error.message);
+      await prisma.source.upsert({
+        where: { ingest_method_source_url: { ingest_method: src.ingest_method, source_url: src.source_url } },
+        create: src,
+        update: {
+          display_name: src.display_name,
+          source_category: src.source_category,
+          primary_causes: src.primary_causes,
+          language: src.language,
+          ...(src.poll_interval_minutes ? { poll_interval_minutes: src.poll_interval_minutes } : {}),
+        },
+      });
+      created += 1;
     } else {
-      // submission-only sources: check by display_name first to avoid dupes
-      const { data: existing } = await supabase
-        .from('sources')
-        .select('id')
-        .eq('display_name', src.display_name)
-        .eq('city_slug', src.city_slug)
-        .maybeSingle();
-      if (!existing) {
-        const { error } = await supabase.from('sources').insert(src);
-        if (error) console.error(`Failed to seed ${src.display_name}:`, error.message);
-      }
+      const existing = await prisma.source.findFirst({
+        where: { display_name: src.display_name, city_slug: src.city_slug },
+        select: { id: true },
+      });
+      if (existing) { skipped += 1; continue; }
+      await prisma.source.create({ data: src });
+      created += 1;
     }
   }
 
-  console.log('Seed complete.');
+  console.log(`Seed complete. Inserted/updated: ${created}, skipped: ${skipped}`);
 }
 
-seed().catch(err => {
-  console.error(err);
-  process.exit(1);
-});
+seed()
+  .catch(err => {
+    console.error(err);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());

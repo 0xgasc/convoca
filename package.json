@@ -12,9 +12,11 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
-    "@supabase/supabase-js": "^2.45.0",
+    "@prisma/client": "^6.19.3",
     "mapbox-gl": "^3.7.0",
     "next": "14.2.35",
+    "pg": "^8.20.0",
+    "prisma": "^6.19.3",
     "react": "^18",
     "react-dom": "^18",
     "zod": "^3.23.0"
@@ -22,6 +24,7 @@
   "devDependencies": {
     "@types/mapbox-gl": "^3.4.0",
     "@types/node": "^20",
+    "@types/pg": "^8.20.0",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.4.0",
