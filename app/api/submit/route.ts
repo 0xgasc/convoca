@@ -5,6 +5,7 @@
 import { prisma } from '@/lib/db';
 import { runVisionExtractor } from '@/lib/agents/visionExtractor';
 import { rateLimit } from '@/lib/rateLimit';
+import { verifyTurnstile, TURNSTILE_ENABLED } from '@/lib/turnstile';
 import type { CitySlug } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -28,12 +29,14 @@ export async function POST(req: Request) {
   let city: CitySlug;
   let imageBuffer: Buffer | undefined;
   let imageMediaType: ImageMedia | undefined;
+  let turnstileToken: string | null = null;
 
   if (contentType.includes('multipart/form-data')) {
     const form = await req.formData();
     const file = form.get('image') as File | null;
     sessionId = String(form.get('sessionId') ?? '');
     city = (form.get('city') as CitySlug) ?? 'nyc';
+    turnstileToken = (form.get('turnstile_token') as string) ?? null;
 
     if (!file) return badRequest('Missing image file');
     submissionType = 'image_upload';
@@ -44,6 +47,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     sessionId = String(body.sessionId ?? '');
     city = (body.city as CitySlug) ?? 'nyc';
+    turnstileToken = body.turnstile_token ?? null;
 
     if (body.url) {
       submissionType = 'url';
@@ -57,6 +61,15 @@ export async function POST(req: Request) {
   }
 
   if (!sessionId) return badRequest('Missing sessionId');
+
+  // Cloudflare Turnstile bot check (no-op when not configured)
+  if (TURNSTILE_ENABLED) {
+    const ipForTurnstile = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+    const ok = await verifyTurnstile(turnstileToken, ipForTurnstile);
+    if (!ok) {
+      return Response.json({ error: 'Bot check failed. Refresh and try again.' }, { status: 403 });
+    }
+  }
 
   // Bot / spam guard: 10 submissions per session per hour, 30 per IP per hour
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';

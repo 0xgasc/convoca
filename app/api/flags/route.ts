@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import { runSafetyReview } from '@/lib/agents/safetyReview';
+import { requireVerifiedSession } from '@/lib/auth';
 import { FLAG_TYPE_DISPLAY } from '@/lib/constants';
 import type { CitySlug, FlagSeverity, FlagType } from '@/lib/types';
 
@@ -65,10 +66,12 @@ interface PostBody {
   lng: number;
   note?: string | null;
   event_id?: string | null;
-  reporter_session_id: string;
 }
 
 export async function POST(req: Request) {
+  const auth = await requireVerifiedSession(req);
+  if (!auth.ok) return Response.json({ error: auth.error }, { status: auth.status });
+
   let body: PostBody;
   try {
     body = await req.json();
@@ -84,9 +87,6 @@ export async function POST(req: Request) {
   }
   if (typeof body.lat !== 'number' || typeof body.lng !== 'number') {
     return Response.json({ error: 'lat and lng required' }, { status: 400 });
-  }
-  if (!body.reporter_session_id) {
-    return Response.json({ error: 'reporter_session_id required' }, { status: 400 });
   }
 
   const cityScope = FLAG_TYPE_DISPLAY[body.flag_type].applicable_cities;
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
     flagType: body.flag_type,
     note: body.note ?? null,
     city: body.city,
-    reporterSessionId: body.reporter_session_id,
+    reporterSessionId: auth.session.id,
   });
 
   const ttlMinutes = FLAG_TYPE_DISPLAY[body.flag_type].default_ttl_minutes;
@@ -121,7 +121,7 @@ export async function POST(req: Request) {
         lat: body.lat,
         lng: body.lng,
         note: noteToStore,
-        reporter_session_id: body.reporter_session_id,
+        reporter_session_id: auth.session.id,
         status: review.decision === 'approve' ? 'approved' : review.decision === 'block' ? 'blocked' : 'review',
         safety_review_reasoning: review.reasoning,
         expires_at: expiresAt,

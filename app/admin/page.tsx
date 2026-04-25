@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { getAgentIcon } from '@/lib/icons';
+import { Cog } from 'lucide-react';
 
 interface AdminStats {
   generated_at: string;
@@ -29,16 +31,10 @@ interface AgentRun {
   reasoning_trace: unknown;
 }
 
-const AGENT_ICONS: Record<string, string> = {
-  intent_parse: '🎯',
-  discovery: '🔭',
-  harvester: '📡',
-  vision_extractor: '👁️',
-  dedup: '🔗',
-  recommender: '⭐',
-  safety_review: '🛡️',
-  orchestrator: '🎼',
-};
+const AGENT_NAMES = [
+  'intent_parse', 'discovery', 'harvester', 'vision_extractor',
+  'dedup', 'recommender', 'safety_review', 'orchestrator',
+];
 
 const REFRESH_MS = 8000;
 
@@ -174,7 +170,8 @@ export default function AdminPage() {
           <section className="px-6 mt-6">
             <h2 className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Agents (7d)</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {Object.keys(AGENT_ICONS).map(agent => {
+              {AGENT_NAMES.map(agent => {
+                const Icon = getAgentIcon(agent);
                 const count = stats.agents.runs_by_agent_7d[agent] ?? 0;
                 const ms = stats.agents.avg_latency_ms_7d[agent] ?? 0;
                 return (
@@ -185,7 +182,7 @@ export default function AdminPage() {
                       filterAgent === agent ? 'border-white bg-neutral-900' : 'border-neutral-800'
                     }`}
                   >
-                    <div className="text-sm">{AGENT_ICONS[agent]} {agent}</div>
+                    <div className="text-sm inline-flex items-center gap-1.5"><Icon className="w-3.5 h-3.5" /> {agent}</div>
                     <div className="text-xl font-semibold mt-1">{count}</div>
                     <div className="text-xs text-neutral-500">{ms ? `~${(ms / 1000).toFixed(1)}s avg` : 'no runs'}</div>
                   </button>
@@ -206,14 +203,16 @@ export default function AdminPage() {
             </div>
             <div className="rounded border border-neutral-800 divide-y divide-neutral-800">
               {runs.length === 0 && <div className="px-3 py-6 text-center text-sm text-neutral-500">No runs yet.</div>}
-              {runs.map(r => (
+              {runs.map(r => {
+                const Icon = getAgentIcon(r.agent_name) ?? Cog;
+                return (
                 <div key={r.id} className="px-3 py-2 text-sm">
                   <button
                     onClick={() => setExpanded(expanded === r.id ? null : r.id)}
                     className="w-full flex items-baseline justify-between gap-3 text-left"
                   >
-                    <div className="flex items-baseline gap-2 min-w-0 flex-1">
-                      <span className="text-base">{AGENT_ICONS[r.agent_name] ?? '⚙️'}</span>
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <Icon className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
                       <span className="font-medium text-neutral-200 truncate">{r.agent_name}</span>
                       <span className="text-neutral-500 truncate">{r.output_summary ?? r.input_summary ?? '—'}</span>
                     </div>
@@ -229,7 +228,8 @@ export default function AdminPage() {
                     </pre>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         </>

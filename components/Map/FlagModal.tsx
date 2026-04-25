@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { X, Loader2 } from 'lucide-react';
 import { FLAG_TYPES, FLAG_TYPE_DISPLAY } from '@/lib/constants';
+import { getFlagIcon } from '@/lib/icons';
 import type { CitySlug, FlagSeverity, FlagType } from '@/lib/types';
 
 interface FlagModalProps {
@@ -12,9 +14,10 @@ interface FlagModalProps {
   language?: 'en' | 'es';
   onClose: () => void;
   onSubmitted: (result: { decision: 'approve' | 'block' | 'review'; reasoning: string }) => void;
+  onRequestSignIn?: () => void;
 }
 
-export function FlagModal({ city, sessionId, lngLat, eventId, language = 'en', onClose, onSubmitted }: FlagModalProps) {
+export function FlagModal({ city, sessionId, lngLat, eventId, language = 'en', onClose, onSubmitted, onRequestSignIn }: FlagModalProps) {
   const t = language;
   const applicable = FLAG_TYPES.filter(ft => FLAG_TYPE_DISPLAY[ft].applicable_cities.includes(city));
   const [flagType, setFlagType] = useState<FlagType>(applicable[0]);
@@ -29,7 +32,7 @@ export function FlagModal({ city, sessionId, lngLat, eventId, language = 'en', o
     try {
       const res = await fetch('/api/flags', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-session-id': sessionId },
         body: JSON.stringify({
           city,
           flag_type: flagType,
@@ -38,10 +41,14 @@ export function FlagModal({ city, sessionId, lngLat, eventId, language = 'en', o
           lng: lngLat.lng,
           note: note.trim() || null,
           event_id: eventId ?? null,
-          reporter_session_id: sessionId,
         }),
       });
       const json = await res.json();
+      if (res.status === 401) {
+        onClose();
+        onRequestSignIn?.();
+        return;
+      }
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       onSubmitted(json.review);
       onClose();
@@ -65,7 +72,7 @@ export function FlagModal({ city, sessionId, lngLat, eventId, language = 'en', o
           <h2 className="text-lg font-semibold text-neutral-900">
             {t === 'es' ? 'Agregar aviso' : 'Add a flag'}
           </h2>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700" aria-label="close">×</button>
+          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700" aria-label="close"><X className="w-5 h-5" /></button>
         </div>
         <div className="text-xs text-neutral-500 mb-3">
           {t === 'es' ? 'Posición:' : 'Location:'} {lngLat.lat.toFixed(4)}, {lngLat.lng.toFixed(4)}
@@ -76,17 +83,18 @@ export function FlagModal({ city, sessionId, lngLat, eventId, language = 'en', o
           <div className="mt-1 grid grid-cols-3 gap-1">
             {applicable.map(ft => {
               const meta = FLAG_TYPE_DISPLAY[ft];
+              const Icon = getFlagIcon(ft);
               return (
                 <button
                   key={ft}
                   type="button"
                   onClick={() => setFlagType(ft)}
-                  className={`text-xs px-2 py-2 rounded border ${
+                  className={`text-xs px-2 py-2 rounded border flex flex-col items-center gap-1 ${
                     flagType === ft ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50'
                   }`}
                   title={meta.label_en}
                 >
-                  <div className="text-base">{meta.icon}</div>
+                  <Icon className="w-4 h-4" />
                   <div>{t === 'es' ? meta.label_es : meta.label_en}</div>
                 </button>
               );
@@ -132,8 +140,9 @@ export function FlagModal({ city, sessionId, lngLat, eventId, language = 'en', o
           <button
             onClick={submit}
             disabled={busy}
-            className="px-4 py-2 text-sm font-medium rounded bg-neutral-900 text-white hover:bg-neutral-800 disabled:bg-neutral-300"
+            className="px-4 py-2 text-sm font-medium rounded bg-neutral-900 text-white hover:bg-neutral-800 disabled:bg-neutral-300 inline-flex items-center gap-1.5"
           >
+            {busy && <Loader2 className="w-4 h-4 animate-spin" />}
             {busy ? (t === 'es' ? 'Enviando…' : 'Sending…') : (t === 'es' ? 'Enviar' : 'Submit')}
           </button>
         </div>

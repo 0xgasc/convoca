@@ -1,7 +1,21 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Camera, Upload, Loader2 } from 'lucide-react';
+import Script from 'next/script';
 import type { CitySlug } from '@/lib/types';
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '';
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (container: string | HTMLElement, options: Record<string, unknown>) => string;
+      reset: (id?: string) => void;
+      getResponse: (id?: string) => string | undefined;
+    };
+  }
+}
 
 interface DropZoneProps {
   sessionId: string;
@@ -39,6 +53,38 @@ export function DropZone({ sessionId, city, onSubmitted, language = 'en' }: Drop
   const [url, setUrl] = useState('');
   const [text, setText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Render Turnstile widget once script is ready
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return;
+    const tryRender = () => {
+      if (!window.turnstile || !turnstileContainerRef.current || turnstileWidgetIdRef.current) return;
+      turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        theme: 'light',
+        size: 'normal',
+      });
+    };
+    if (window.turnstile) tryRender();
+    else {
+      const t = setInterval(() => { if (window.turnstile) { tryRender(); clearInterval(t); } }, 200);
+      return () => clearInterval(t);
+    }
+  }, []);
+
+  const getTurnstileToken = (): string | null => {
+    if (!TURNSTILE_SITE_KEY) return null;
+    if (!window.turnstile || !turnstileWidgetIdRef.current) return null;
+    return window.turnstile.getResponse(turnstileWidgetIdRef.current) ?? null;
+  };
+
+  const resetTurnstile = () => {
+    if (window.turnstile && turnstileWidgetIdRef.current) {
+      window.turnstile.reset(turnstileWidgetIdRef.current);
+    }
+  };
 
   const sendImage = useCallback(async (file: File) => {
     setBusy(true);
@@ -48,10 +94,13 @@ export function DropZone({ sessionId, city, onSubmitted, language = 'en' }: Drop
       fd.append('image', file);
       fd.append('sessionId', sessionId);
       fd.append('city', city);
+      const tt = getTurnstileToken();
+      if (tt) fd.append('turnstile_token', tt);
       const res = await fetch('/api/submit', { method: 'POST', body: fd });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.message ?? `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(json.error ?? json.message ?? `HTTP ${res.status}`);
       onSubmitted(json.submissionId);
+      resetTurnstile();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -64,19 +113,21 @@ export function DropZone({ sessionId, city, onSubmitted, language = 'en' }: Drop
     setBusy(true);
     setError(null);
     try {
+      const turnstile_token = getTurnstileToken();
       const body = url.trim()
-        ? { url: url.trim(), sessionId, city }
-        : { text: text.trim(), sessionId, city };
+        ? { url: url.trim(), sessionId, city, turnstile_token }
+        : { text: text.trim(), sessionId, city, turnstile_token };
       const res = await fetch('/api/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.message ?? `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(json.error ?? json.message ?? `HTTP ${res.status}`);
       setUrl('');
       setText('');
       onSubmitted(json.submissionId);
+      resetTurnstile();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -86,6 +137,9 @@ export function DropZone({ sessionId, city, onSubmitted, language = 'en' }: Drop
 
   return (
     <div className="space-y-4">
+      {TURNSTILE_SITE_KEY && (
+        <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" async defer />
+      )}
       <div
         onDragOver={e => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
@@ -100,7 +154,7 @@ export function DropZone({ sessionId, city, onSubmitted, language = 'en' }: Drop
           dragOver ? 'border-blue-500 bg-blue-50' : 'border-neutral-300 bg-white hover:bg-neutral-50'
         }`}
       >
-        <div className="text-4xl mb-2">📸</div>
+        <Camera className="w-10 h-10 mx-auto mb-2 text-neutral-500" />
         <div className="text-sm text-neutral-700">{t.drop}</div>
         <input
           ref={fileInputRef}
@@ -135,11 +189,16 @@ export function DropZone({ sessionId, city, onSubmitted, language = 'en' }: Drop
           type="button"
           onClick={() => void sendUrlOrText()}
           disabled={busy || (!url.trim() && !text.trim())}
-          className="w-full px-4 py-2 text-sm font-medium rounded bg-neutral-900 text-white hover:bg-neutral-800 disabled:bg-neutral-300 disabled:cursor-not-allowed"
+          className="w-full px-4 py-2 text-sm font-medium rounded bg-neutral-900 text-white hover:bg-neutral-800 disabled:bg-neutral-300 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
         >
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
           {busy ? t.sending : t.submit}
         </button>
       </div>
+
+      {TURNSTILE_SITE_KEY && (
+        <div ref={turnstileContainerRef} className="flex justify-center" />
+      )}
 
       {error && (
         <div className="rounded bg-red-50 border border-red-200 text-red-800 text-sm px-3 py-2">

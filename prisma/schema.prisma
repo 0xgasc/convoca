@@ -100,10 +100,11 @@ model Event {
   embedding              Unsupported("vector(1024)")?
   created_at             DateTime                     @default(now()) @db.Timestamptz(6)
 
-  city          City?         @relation(fields: [city_slug], references: [slug])
+  city          City?          @relation(fields: [city_slug], references: [slug])
   flags         EventFlag[]
   event_sources EventSource[]
   submissions   Submission[]
+  comments      EventComment[]
 
   @@index([datetime_iso])
   @@map("events")
@@ -174,17 +175,40 @@ model Submission {
 }
 
 model UserSession {
-  id            String   @id
-  city_slug     String?
-  cause_prefs   String[] @default([])
-  action_prefs  String[] @default(["attend"])
-  language      String   @default("en")
-  neighborhood  String?
-  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  id                          String    @id
+  city_slug                   String?
+  cause_prefs                 String[]  @default([])
+  action_prefs                String[]  @default(["attend"])
+  language                    String    @default("en")
+  neighborhood                String?
+  email                       String?
+  display_name                String?
+  verified_at                 DateTime? @db.Timestamptz(6)
+  email_verification_token    String?   @unique
+  email_verification_expires  DateTime? @db.Timestamptz(6)
+  created_at                  DateTime  @default(now()) @db.Timestamptz(6)
 
-  city City? @relation(fields: [city_slug], references: [slug])
+  city     City?          @relation(fields: [city_slug], references: [slug])
+  comments EventComment[]
 
+  @@index([email])
   @@map("user_sessions")
+}
+
+model EventComment {
+  id                       String   @id @default(uuid()) @db.Uuid
+  event_id                 String   @db.Uuid
+  session_id               String
+  body                     String
+  status                   String   @default("approved")
+  safety_review_reasoning  String?
+  created_at               DateTime @default(now()) @db.Timestamptz(6)
+
+  event   Event       @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  session UserSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+
+  @@index([event_id, created_at(sort: Desc)])
+  @@map("event_comments")
 }
 
 model AgentRun {
