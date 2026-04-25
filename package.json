@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "build": "prisma generate && next build",
+    "start": "next start -p ${PORT:-3000}",
     "lint": "next lint",
+    "postinstall": "prisma generate",
     "seed:sources": "tsx scripts/seed-nyc-sources.ts",
     "test:vision": "tsx scripts/test-vision.ts"
   },
