@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { SignupCTA } from '@/components/EventDetail/SignupCTA';
 import { SourcesList } from '@/components/EventDetail/SourcesList';
 import { ReasoningTrace } from '@/components/EventDetail/ReasoningTrace';
+import { EventFlagButton } from '@/components/EventDetail/EventFlagButton';
 import { EVENT_TYPE_DISPLAY, CAUSE_DISPLAY } from '@/lib/constants';
 import type { CanonicalEvent } from '@/lib/types';
 
@@ -65,6 +66,16 @@ export default async function EventDetailPage({ params }: { params: { id: string
             </div>
           )}
         </header>
+
+        <div className="mb-4">
+          <EventFlagButton
+            city={event.city_slug}
+            eventId={event.id}
+            fallbackLat={event.lat}
+            fallbackLng={event.lng}
+            language={lang}
+          />
+        </div>
 
         <div className="space-y-4">
           <SignupCTA event={event} language={lang} />

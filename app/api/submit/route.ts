@@ -4,6 +4,7 @@
 
 import { prisma } from '@/lib/db';
 import { runVisionExtractor } from '@/lib/agents/visionExtractor';
+import { rateLimit } from '@/lib/rateLimit';
 import type { CitySlug } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -56,6 +57,18 @@ export async function POST(req: Request) {
   }
 
   if (!sessionId) return badRequest('Missing sessionId');
+
+  // Bot / spam guard: 10 submissions per session per hour, 30 per IP per hour
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+  const sessionLimit = rateLimit(`submit:s:${sessionId}`, 10, 3600);
+  const ipLimit = rateLimit(`submit:ip:${ip}`, 30, 3600);
+  if (!sessionLimit.allowed || !ipLimit.allowed) {
+    const retry = Math.max(sessionLimit.retryAfterSec, ipLimit.retryAfterSec);
+    return new Response(
+      JSON.stringify({ error: 'Too many submissions. Slow down.', retry_after_sec: retry }),
+      { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(retry) } },
+    );
+  }
 
   const submission = await prisma.submission.create({
     data: {
