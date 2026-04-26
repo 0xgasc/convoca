@@ -23,7 +23,7 @@ export const Action: React.FC = () => {
             <div style={{ fontSize: 22, color: '#737373' }}>Saturday 2pm · Foley Square</div>
             <button style={{
               marginTop: 12, padding: '24px 32px', borderRadius: 14, border: 'none',
-              background: interpolate(tap, [0, 1], ['#171717', '#16a34a'] as unknown as number[]) as unknown as string,
+              background: tap > 0.5 ? '#16a34a' : '#171717',
               color: 'white', fontSize: 32, fontWeight: 600,
               transform: `scale(${interpolate(tap, [0, 0.5, 1], [1, 0.95, 1])})`,
             }}>
