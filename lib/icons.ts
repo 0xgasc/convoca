@@ -57,6 +57,7 @@ export const AGENT_ICON: Record<string, LucideIcon> = {
   dedup: Link2,
   recommender: Star,
   safety_review: Shield,
+  submission_audit: ShieldAlert,
   orchestrator: Music2,
 };
 

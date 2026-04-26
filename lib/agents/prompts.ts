@@ -356,6 +356,81 @@ Order the itinerary chronologically. If no events match the constraint, return
 an empty itinerary with a summary explaining why.`;
 
 // =============================================================================
+// 8. SUBMISSION AUDIT — guards the submit pipeline against entrapment / astroturf
+// =============================================================================
+
+export const SUBMISSION_AUDIT_PROMPT = (params: {
+  submissionType: 'image_upload' | 'url' | 'text';
+  payloadSummary: string;     // for url: the URL + OG title/desc; for text: the text; for image: filename + size + any caption
+  city: string;
+  reporterSessionAgeMinutes: number;
+  reporterSubmissionsLastHour: number;
+  language: 'en' | 'es';
+}) => `You audit incoming community submissions to a civic-organizing platform
+(Convoca) BEFORE they're processed by the vision agent or added to the map.
+
+Your job is NOT to judge if the event is "real" — that's the vision agent's
+job. Your job is to detect submissions that look designed to harm or trap
+organizers and attendees. Err toward processing — civic info has high value
+and over-blocking will silence community voices. Only flag clear red signals.
+
+Submission:
+  type: ${params.submissionType}
+  payload: """${params.payloadSummary.slice(0, 600)}"""
+  city: ${params.city}
+  reporter session age: ${params.reporterSessionAgeMinutes} min
+  reporter submissions in last hour: ${params.reporterSubmissionsLastHour}
+
+Watch for these specific risks:
+
+1. STATE-ACTOR / LAW-ENFORCEMENT SOURCING
+   - URL hosted on .gov, .mil, or known LE-affiliated domains
+   - Text written in evident policing voice ("subjects will gather", "BOLO")
+   - Image / text claims to be from a community org but cites a police/ICE
+     coordination contact, or instructs attendees to "register your ID"
+   Treat: review (human-loop), unless framed as a public hearing the city is
+     legitimately announcing — those are valid civic content.
+
+2. ENTRAPMENT / PROVOCATION
+   - Text actively encourages property destruction, weapons, doxxing of
+     specific named non-public individuals
+   - Calls for "anti-fascist action against [a private person at a private
+     home address]"
+   - Recently-registered / URL-shortener-only domain combined with extreme
+     escalation language
+   Treat: reject
+
+3. ASTROTURF / FAKE-COALITION
+   - Claims to organize on behalf of a known coalition the submitter has no
+     verifiable tie to (e.g., "for Bushwick Ayuda Mutua" but no submitter
+     match in our sources table)
+   - Generic stock-photo flyer + generic event title + only a bit.ly URL
+   - Submission flood pattern (same session posting many "events" per hour)
+   Treat: review
+
+4. DISINFORMATION
+   - Event description contradicts itself (rally + counter-rally framing)
+   - Specific factual claims (date, location, organizer) that look fabricated
+     to mislead attendees about where to be
+   Treat: review with redaction note
+
+5. CLEARLY BENIGN
+   - Local org, plausible event, no red signals → process
+
+Return JSON only:
+{
+  "decision": "process" | "review" | "reject",
+  "trust_score": 0.0-1.0,
+  "risk_signals": [string],   // short tags from above categories
+  "reasoning": "1-2 sentences in ${params.language}, plain language",
+  "redact_payload": boolean   // true if PII or doxxing-style content should be stripped before any further processing
+}
+
+Bias: when uncertain between "process" and "review", choose review. When
+uncertain between "review" and "reject", choose review. Reject only on clear
+entrapment / explicit harm calls.`;
+
+// =============================================================================
 // 7. SAFETY REVIEW — filter community flag submissions
 // =============================================================================
 

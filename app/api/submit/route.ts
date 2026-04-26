@@ -4,6 +4,7 @@
 
 import { prisma } from '@/lib/db';
 import { runVisionExtractor } from '@/lib/agents/visionExtractor';
+import { runSubmissionAudit } from '@/lib/agents/submissionAudit';
 import { rateLimit } from '@/lib/rateLimit';
 import { verifyTurnstile, TURNSTILE_ENABLED } from '@/lib/turnstile';
 import type { CitySlug } from '@/lib/types';
@@ -147,6 +148,45 @@ async function processSubmission(input: ProcessInput): Promise<void> {
       await prisma.submission.update({
         where: { id: input.submissionId },
         data: { status: 'rejected', rejection_reason: 'No usable content extracted', processed_at: new Date() },
+      });
+      return;
+    }
+
+    // Submission Audit — Haiku-cheap gate against state-actor / entrapment / astroturf
+    const auditPayloadSummary = input.submissionType === 'url'
+      ? `URL: ${input.payload}\n\nOG: ${postText ?? ''}`
+      : input.submissionType === 'text'
+        ? `TEXT: ${input.payload}`
+        : `IMAGE: ${input.payload}${postText ? `\nCaption: ${postText}` : ''}`;
+
+    const audit = await runSubmissionAudit({
+      submissionType: input.submissionType,
+      payloadSummary: auditPayloadSummary,
+      city: input.city,
+      reporterSessionId: input.sessionId,
+    });
+
+    if (audit.decision === 'reject') {
+      await prisma.submission.update({
+        where: { id: input.submissionId },
+        data: {
+          status: 'rejected',
+          rejection_reason: `Submission Audit: ${audit.reasoning}`,
+          processed_at: new Date(),
+        },
+      });
+      return;
+    }
+
+    if (audit.decision === 'review') {
+      // Don't block, but flag the resulting submission for human review and skip auto-publishing.
+      await prisma.submission.update({
+        where: { id: input.submissionId },
+        data: {
+          status: 'rejected',
+          rejection_reason: `Sent to human review: ${audit.reasoning} (signals: ${audit.risk_signals.join(', ') || 'none'})`,
+          processed_at: new Date(),
+        },
       });
       return;
     }
