@@ -9,6 +9,7 @@ import {
   ShieldAlert, Shield, CornerDownRight, AlertTriangle, AlertOctagon,
   HelpCircle, Plus, Home, Package, Ban, Car,
   Target, Telescope, Antenna, Eye, Link2, Star, Music2, Cog,
+  Sparkles, Calendar,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -56,6 +57,8 @@ export const AGENT_ICON: Record<string, LucideIcon> = {
   vision_extractor: Eye,
   dedup: Link2,
   recommender: Star,
+  curator: Sparkles,
+  scheduler: Calendar,
   safety_review: Shield,
   submission_audit: ShieldAlert,
   orchestrator: Music2,

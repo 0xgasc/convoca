@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Upload, Info, Languages, MapPinned, Check, Calendar } from 'lucide-react';
+import { Upload, Info, Languages, MapPinned, Check, Calendar, Sparkles } from 'lucide-react';
 import { AgentTrace } from '@/components/Chat/AgentTrace';
 import { ChatInput } from '@/components/Chat/ChatInput';
 import { RefreshSources } from '@/components/Chat/RefreshSources';
@@ -12,6 +12,7 @@ import { OnboardingModal } from '@/components/Onboarding/OnboardingModal';
 import { SignInModal } from '@/components/Auth/SignInModal';
 import { EventModal } from '@/components/EventDetail/EventModal';
 import { SchedulePanel } from '@/components/Schedule/SchedulePanel';
+import { CurateCardStack } from '@/components/Curate/CurateCardStack';
 import { CITIES } from '@/lib/constants';
 import type { CanonicalEvent, CitySlug } from '@/lib/types';
 
@@ -57,6 +58,7 @@ export default function Home() {
   const [flagAt, setFlagAt] = useState<{ lng: number; lat: number } | null>(null);
   const [openEventId, setOpenEventId] = useState<string | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [showCurate, setShowCurate] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   // Bootstrap session
@@ -227,6 +229,14 @@ export default function Home() {
             {events.length} {language === 'es' ? 'eventos' : 'events'} · {flags.length} {language === 'es' ? 'avisos' : 'flags'}
           </span>
           <button
+            onClick={() => setShowCurate(true)}
+            className="inline-flex items-center gap-1 text-sm text-amber-700 hover:text-amber-900 font-medium"
+            title={language === 'es' ? 'Curar para mí' : 'Curate for me'}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{language === 'es' ? 'Curar' : 'Curate'}</span>
+          </button>
+          <button
             onClick={() => setShowSchedule(true)}
             className="inline-flex items-center gap-1 text-sm text-neutral-700 hover:text-neutral-900"
             title={language === 'es' ? 'Mi agenda' : 'My schedule'}
@@ -380,6 +390,23 @@ export default function Home() {
           onClose={() => setShowSchedule(false)}
           onOpenEvent={id => {
             setShowSchedule(false);
+            setOpenEventId(id);
+            const u = new URL(window.location.href);
+            u.searchParams.set('event', id);
+            window.history.replaceState({}, '', u.toString());
+          }}
+        />
+      )}
+
+      {showCurate && sessionId && (
+        <CurateCardStack
+          sessionId={sessionId}
+          city={city}
+          language={language}
+          onClose={() => setShowCurate(false)}
+          onSaved={() => setToast(language === 'es' ? 'Guardado en tu agenda' : 'Saved to your schedule')}
+          onOpenEvent={id => {
+            setShowCurate(false);
             setOpenEventId(id);
             const u = new URL(window.location.href);
             u.searchParams.set('event', id);

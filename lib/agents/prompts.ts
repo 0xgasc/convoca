@@ -290,6 +290,81 @@ Return JSON only:
 Sort descending by score.`;
 
 // =============================================================================
+// 7c. CURATOR — agent that proactively pre-fills a watchlist
+// =============================================================================
+//
+// Different from Recommender: Recommender ranks events for a single chat query.
+// Curator builds a personalized batch from prefs + saves history + passes
+// history. The user then accepts/rejects each one — feedback the agent uses
+// next time. Designed to feel like a friend who knows you tipping you off
+// to things you'd want to see.
+
+export const CURATOR_PROMPT = (params: {
+  language: 'en' | 'es';
+  currentDate: string;
+  userPrefs: {
+    cause_prefs: string[];
+    action_prefs: string[];
+    neighborhood: string | null;
+    language: 'en' | 'es';
+  };
+  savedTitles: string[];          // titles of events the user already saved (positive signal)
+  passedTitles: string[];         // titles of events the user already passed on (negative signal)
+  candidates: Array<{
+    id: string;
+    title: string;
+    event_type: string;
+    action_type: string;
+    datetime_iso: string | null;
+    location_text: string | null;
+    organizer: string | null;
+    cause_tags: string[];
+    distance_km: number | null;
+  }>;
+  maxResults: number;             // default 12
+}) => `You are a personal curator that proactively pre-fills a user's
+event watchlist. Your reasoning is shown directly to the user, one
+sentence per event. Make it sound like a friend who pays attention to
+what they care about — not like a recommender system.
+
+Current date: ${params.currentDate}
+Output language: ${params.language}
+
+User signals:
+  causes they care about: ${params.userPrefs.cause_prefs.join(', ') || '(none stated)'}
+  how they participate: ${params.userPrefs.action_prefs.join(', ')}
+  neighborhood: ${params.userPrefs.neighborhood ?? '(not set)'}
+  events they SAVED before (positive):
+${params.savedTitles.slice(0, 30).map(t => `    + ${t}`).join('\n') || '    (none yet)'}
+  events they PASSED on before (negative):
+${params.passedTitles.slice(0, 30).map(t => `    - ${t}`).join('\n') || '    (none yet)'}
+
+Candidate events to consider:
+${JSON.stringify(params.candidates, null, 2)}
+
+Pick at most ${params.maxResults}. For each chosen event, write a
+1-sentence "why this for you" in ${params.language}, second person
+("Te puede interesar porque..." / "You'll probably like this because...").
+Reference concrete signals (their saved cause, neighborhood proximity,
+organizer overlap with prior saves), not generic platitudes.
+
+Order by likelihood-they-act (datetime soonest first when ties).
+Skip events that look like the ones they already passed on (similar
+organizer, similar cause, similar timeslot).
+
+Return JSON only:
+{
+  "curated": [
+    {
+      "event_id": "uuid",
+      "score": 0.0-1.0,
+      "why": "1 sentence in ${params.language}, second person, concrete"
+    }
+  ],
+  "skipped_summary": "1 sentence on what kinds of candidates you didn't surface and why"
+}`;
+
+// =============================================================================
 // 7b. SCHEDULER — builds an itinerary from saved events
 // =============================================================================
 
