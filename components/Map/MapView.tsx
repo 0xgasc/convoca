@@ -7,6 +7,7 @@ import { CITIES } from '@/lib/constants';
 import type { CanonicalEvent, CitySlug, FlagType } from '@/lib/types';
 import { renderEventMarkers } from './EventMarkers';
 import { renderFlagOverlay } from './FlagOverlay';
+import { renderBoroughOverlay } from './BoroughOverlay';
 
 export interface FlagRow {
   id: string;
@@ -28,16 +29,18 @@ interface MapViewProps {
   events: CanonicalEvent[];
   flags: FlagRow[];
   highlightedIds?: Set<string>;
+  selectedBoroughs?: Set<string>;
   onEventClick?: (event: CanonicalEvent) => void;
   onMapClick?: (lngLat: { lng: number; lat: number }) => void;
+  onBoroughToggle?: (slug: string) => void;
 }
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '';
 
-export function MapView({ city, events, flags, highlightedIds, onEventClick, onMapClick }: MapViewProps) {
+export function MapView({ city, events, flags, highlightedIds, selectedBoroughs, onEventClick, onMapClick, onBoroughToggle }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapboxMap | null>(null);
-  const cleanupRef = useRef<{ events?: () => void; flags?: () => void }>({});
+  const cleanupRef = useRef<{ events?: () => void; flags?: () => void; boroughs?: () => void }>({});
   const [styleReady, setStyleReady] = useState(false);
   const [tokenMissing] = useState(!MAPBOX_TOKEN);
 
@@ -95,6 +98,21 @@ export function MapView({ city, events, flags, highlightedIds, onEventClick, onM
     cleanupRef.current.flags?.();
     cleanupRef.current.flags = renderFlagOverlay(map, flags);
   }, [flags, styleReady]);
+
+  // Render NYC borough overlay (only when in NYC and a toggle handler is set)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleReady) return;
+    cleanupRef.current.boroughs?.();
+    cleanupRef.current.boroughs = undefined;
+    if (city !== 'nyc' || !onBoroughToggle) return;
+    let cleanup: (() => void) | undefined;
+    void renderBoroughOverlay(map, {
+      selected: selectedBoroughs ?? new Set(),
+      onToggle: onBoroughToggle,
+    }).then(c => { cleanup = c; cleanupRef.current.boroughs = c; });
+    return () => { cleanup?.(); };
+  }, [city, styleReady, selectedBoroughs, onBoroughToggle]);
 
   if (tokenMissing) {
     return (

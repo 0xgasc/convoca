@@ -50,7 +50,7 @@
 
 | Table | Count | Source |
 |---|---|---|
-| `cities` | 2 | nyc, guatemala_city |
+| `cities` | 10 | nyc + guatemala_city (live) + LA / SF / Chicago / DC / Boston / Seattle / Philadelphia / Miami (rows only, no sources yet — onboarding shows them as "coming soon") |
 | `flag_type_config` | 12 | seeded by `npm run seed:demo`-ish path |
 | `sources` | 40 | `npm run seed:sources` (NYC + Guate) |
 | `events` | 17 | `npm run seed:demo` (12 NYC + 3-source dedup trio + 2 Guate) |
@@ -173,6 +173,12 @@ Drop a 180-second voiceover MP3 at `remotion/public/voiceover.mp3` and uncomment
 | Public "agents running right now" counter | not started |
 | Cron'd harvest every 30 min | not started — set `CRON_SECRET` and use [cron-job.org](https://cron-job.org) to hit `/api/harvest` with the header |
 | First-visit Curator auto-trigger after onboarding | not started |
+| Mobile-friendly layout (chat panel sticky bottom-half on mobile) | ✓ shipped |
+| Multi-select filters (causes / event types / actions / boroughs) | ✓ shipped (FilterPanel + active-chip strip) |
+| Click-to-filter NYC borough overlay on map | ✓ shipped (BoroughOverlay with public CDN GeoJSON) |
+| Multi-city schema + onboarding picker (8 US cities + Guate + NYC) | ✓ shipped |
+| Bulk flyer upload + Stash/Aeter permanent storage | ✓ shipped |
+| Mobilize / Eventbrite / Telegram adapters (real flyer image sources) | ⚠ stubbed; flesh out for live harvest of visual content |
 
 ## Open decisions
 

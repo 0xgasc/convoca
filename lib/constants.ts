@@ -105,18 +105,24 @@ export const FLAG_TYPE_DISPLAY: Record<string, {
 };
 
 export const CITIES = {
-  nyc: {
-    display_name: 'New York City',
-    country: 'US',
-    default_language: 'en' as const,
-    center: { lat: 40.7128, lng: -74.0060 },
-    timezone: 'America/New_York',
-  },
-  guatemala_city: {
-    display_name: 'Ciudad de Guatemala',
-    country: 'GT',
-    default_language: 'es' as const,
-    center: { lat: 14.6349, lng: -90.5069 },
-    timezone: 'America/Guatemala',
-  },
+  nyc:              { display_name: 'New York City',       country: 'US', default_language: 'en' as const, center: { lat: 40.7128, lng: -74.0060 }, timezone: 'America/New_York',     status: 'live'   as const },
+  guatemala_city:   { display_name: 'Ciudad de Guatemala', country: 'GT', default_language: 'es' as const, center: { lat: 14.6349, lng: -90.5069 }, timezone: 'America/Guatemala',    status: 'live'   as const },
+  los_angeles:      { display_name: 'Los Angeles',         country: 'US', default_language: 'en' as const, center: { lat: 34.0522, lng: -118.2437 }, timezone: 'America/Los_Angeles', status: 'soon'   as const },
+  san_francisco:    { display_name: 'San Francisco',       country: 'US', default_language: 'en' as const, center: { lat: 37.7749, lng: -122.4194 }, timezone: 'America/Los_Angeles', status: 'soon'   as const },
+  chicago:          { display_name: 'Chicago',             country: 'US', default_language: 'en' as const, center: { lat: 41.8781, lng:  -87.6298 }, timezone: 'America/Chicago',     status: 'soon'   as const },
+  washington_dc:    { display_name: 'Washington DC',       country: 'US', default_language: 'en' as const, center: { lat: 38.9072, lng:  -77.0369 }, timezone: 'America/New_York',    status: 'soon'   as const },
+  boston:           { display_name: 'Boston',              country: 'US', default_language: 'en' as const, center: { lat: 42.3601, lng:  -71.0589 }, timezone: 'America/New_York',    status: 'soon'   as const },
+  seattle:          { display_name: 'Seattle',             country: 'US', default_language: 'en' as const, center: { lat: 47.6062, lng: -122.3321 }, timezone: 'America/Los_Angeles', status: 'soon'   as const },
+  philadelphia:     { display_name: 'Philadelphia',        country: 'US', default_language: 'en' as const, center: { lat: 39.9526, lng:  -75.1652 }, timezone: 'America/New_York',    status: 'soon'   as const },
+  miami:            { display_name: 'Miami',               country: 'US', default_language: 'en' as const, center: { lat: 25.7617, lng:  -80.1918 }, timezone: 'America/New_York',    status: 'soon'   as const },
 };
+
+export const NYC_BOROUGHS = [
+  { slug: 'manhattan',     name: 'Manhattan',     center: { lat: 40.7831, lng: -73.9712 } },
+  { slug: 'brooklyn',      name: 'Brooklyn',      center: { lat: 40.6782, lng: -73.9442 } },
+  { slug: 'queens',        name: 'Queens',        center: { lat: 40.7282, lng: -73.7949 } },
+  { slug: 'bronx',         name: 'Bronx',         center: { lat: 40.8448, lng: -73.8648 } },
+  { slug: 'staten_island', name: 'Staten Island', center: { lat: 40.5795, lng: -74.1502 } },
+] as const;
+
+export type NycBoroughSlug = typeof NYC_BOROUGHS[number]['slug'];
