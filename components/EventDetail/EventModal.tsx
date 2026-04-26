@@ -13,6 +13,7 @@ import { SignupCTA } from './SignupCTA';
 import { SourcesList } from './SourcesList';
 import { ReasoningTrace } from './ReasoningTrace';
 import { EventComments } from './EventComments';
+import { SaveButton } from './SaveButton';
 import { FlagModal } from '@/components/Map/FlagModal';
 
 interface EventDetailPayload {
@@ -194,19 +195,22 @@ export function EventModal({ eventId, sessionId, isVerified, onClose, onRequestS
             {/* Action CTA */}
             <SignupCTA event={event} language={lang} />
 
-            {/* Flag CTA */}
-            <button
-              onClick={() => isVerified ? setFlagOpen(true) : onRequestSignIn()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
-            >
-              <Flag className="w-4 h-4" />
-              <span>{lang === 'es' ? 'Reportar aviso comunitario' : 'Add a community flag'}</span>
-              {!isVerified && (
-                <span className="text-[10px] uppercase tracking-wide text-amber-700 ml-1">
-                  ({lang === 'es' ? 'requiere sesión' : 'sign-in needed'})
-                </span>
-              )}
-            </button>
+            {/* Save + Flag row */}
+            <div className="flex flex-wrap gap-2">
+              <SaveButton sessionId={sessionId} eventId={eventId} language={lang} />
+              <button
+                onClick={() => isVerified ? setFlagOpen(true) : onRequestSignIn()}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+              >
+                <Flag className="w-4 h-4" />
+                <span>{lang === 'es' ? 'Reportar aviso' : 'Add a flag'}</span>
+                {!isVerified && (
+                  <span className="text-[10px] uppercase tracking-wide text-amber-700 ml-1">
+                    ({lang === 'es' ? 'sesión' : 'sign-in'})
+                  </span>
+                )}
+              </button>
+            </div>
 
             {/* Live flags on this event */}
             {data && data.flags.length > 0 && (

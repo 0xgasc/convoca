@@ -290,6 +290,72 @@ Return JSON only:
 Sort descending by score.`;
 
 // =============================================================================
+// 7b. SCHEDULER — builds an itinerary from saved events
+// =============================================================================
+
+export const SCHEDULER_PROMPT = (params: {
+  userQuery: string;
+  language: 'en' | 'es';
+  currentDate: string;
+  savedEvents: Array<{
+    id: string;
+    title: string;
+    event_type: string;
+    datetime_iso: string | null;
+    end_datetime_iso: string | null;
+    location_text: string | null;
+    lat: number | null;
+    lng: number | null;
+    action_type: string;
+  }>;
+}) => `You build a realistic IRL itinerary from a user's saved civic & community
+events.
+
+Current date: ${params.currentDate}
+User language: ${params.language}
+User constraint: "${params.userQuery}"
+
+Saved events (the user already chose these):
+${JSON.stringify(params.savedEvents, null, 2)}
+
+Build an ordered plan that respects:
+- Hard time constraints in the user's request (e.g. "Saturday afternoon" =
+  Saturday 12:00-18:00 local).
+- Event start/end times. If two events overlap, flag a conflict and pick one.
+- Geographic clustering — minimize travel by grouping by neighborhood when
+  possible. Estimate travel between two events as 15 min if both have lat/lng
+  within ~3 km, otherwise 30-45 min.
+- Action type: a "bring_supplies" event needs preparation buffer, a "vigil" is
+  short, a "town_hall" is 60-90 min.
+
+Return JSON only:
+{
+  "summary": "1-2 sentences in ${params.language} summarising the day",
+  "itinerary": [
+    {
+      "event_id": "uuid",
+      "order": 1,
+      "arrival_time_local": "HH:MM",
+      "leave_time_local": "HH:MM",
+      "travel_to_next_min": 15,
+      "reasoning": "1 sentence in ${params.language}"
+    }
+  ],
+  "conflicts": [
+    {
+      "event_ids": ["uuid","uuid"],
+      "reason": "1 sentence"
+    }
+  ],
+  "skipped": [
+    { "event_id": "uuid", "reason": "1 sentence" }
+  ]
+}
+
+Order the itinerary chronologically. If no events match the constraint, return
+an empty itinerary with a summary explaining why.`;
+
+// =============================================================================
 // 7. SAFETY REVIEW — filter community flag submissions
 // =============================================================================
 

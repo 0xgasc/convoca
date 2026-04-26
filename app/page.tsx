@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Upload, Info, Languages, MapPinned, Check } from 'lucide-react';
+import { Upload, Info, Languages, MapPinned, Check, Calendar } from 'lucide-react';
 import { AgentTrace } from '@/components/Chat/AgentTrace';
 import { ChatInput } from '@/components/Chat/ChatInput';
 import { MapView, type FlagRow } from '@/components/Map/MapView';
@@ -10,6 +10,7 @@ import { FlagModal } from '@/components/Map/FlagModal';
 import { OnboardingModal } from '@/components/Onboarding/OnboardingModal';
 import { SignInModal } from '@/components/Auth/SignInModal';
 import { EventModal } from '@/components/EventDetail/EventModal';
+import { SchedulePanel } from '@/components/Schedule/SchedulePanel';
 import { CITIES } from '@/lib/constants';
 import type { CanonicalEvent, CitySlug } from '@/lib/types';
 
@@ -54,6 +55,7 @@ export default function Home() {
   const [running, setRunning] = useState(false);
   const [flagAt, setFlagAt] = useState<{ lng: number; lat: number } | null>(null);
   const [openEventId, setOpenEventId] = useState<string | null>(null);
+  const [showSchedule, setShowSchedule] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   // Bootstrap session
@@ -223,6 +225,14 @@ export default function Home() {
           <span className="hidden md:inline text-xs text-neutral-500">
             {events.length} {language === 'es' ? 'eventos' : 'events'} · {flags.length} {language === 'es' ? 'avisos' : 'flags'}
           </span>
+          <button
+            onClick={() => setShowSchedule(true)}
+            className="inline-flex items-center gap-1 text-sm text-neutral-700 hover:text-neutral-900"
+            title={language === 'es' ? 'Mi agenda' : 'My schedule'}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{language === 'es' ? 'Agenda' : 'Schedule'}</span>
+          </button>
           <Link
             href="/submit"
             className="inline-flex items-center gap-1 text-sm text-blue-700 hover:underline"
@@ -358,6 +368,21 @@ export default function Home() {
           language={language}
           onClose={closeEventModal}
           onRequestSignIn={() => requestSignIn(language === 'es' ? 'Iniciá sesión para reportar o comentar.' : 'Sign in to flag or comment.')}
+        />
+      )}
+
+      {showSchedule && sessionId && (
+        <SchedulePanel
+          sessionId={sessionId}
+          language={language}
+          onClose={() => setShowSchedule(false)}
+          onOpenEvent={id => {
+            setShowSchedule(false);
+            setOpenEventId(id);
+            const u = new URL(window.location.href);
+            u.searchParams.set('event', id);
+            window.history.replaceState({}, '', u.toString());
+          }}
         />
       )}
 
