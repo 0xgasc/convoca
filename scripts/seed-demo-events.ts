@@ -334,7 +334,7 @@ async function main() {
   const allFlags = [...NYC_DEMO_FLAGS, ...GUATE_DEMO_FLAGS];
   console.log(`Seeding ${allFlags.length} flags...`);
   for (const f of allFlags) {
-    const ttlMin = 720; // 12h
+    const ttlMin = 60 * 24 * 30; // 30 days — demo flags don't expire mid-demo
     await prisma.eventFlag.create({
       data: {
         city_slug: f.city,

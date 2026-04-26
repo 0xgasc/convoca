@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Upload, Info, Languages, MapPinned, Check, Calendar } from 'lucide-react';
 import { AgentTrace } from '@/components/Chat/AgentTrace';
 import { ChatInput } from '@/components/Chat/ChatInput';
+import { RefreshSources } from '@/components/Chat/RefreshSources';
 import { MapView, type FlagRow } from '@/components/Map/MapView';
 import { FlagModal } from '@/components/Map/FlagModal';
 import { OnboardingModal } from '@/components/Onboarding/OnboardingModal';
@@ -292,6 +293,7 @@ export default function Home() {
                 : 'Ask in English — the orchestrator runs all seven agents on each prompt.'}
             </div>
           </div>
+          <RefreshSources city={city} language={language} onDone={loadEvents} />
           <div className="flex-1 min-h-0">
             {sessionId && (
               <AgentTrace

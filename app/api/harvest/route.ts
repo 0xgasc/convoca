@@ -13,19 +13,29 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 min ceiling for slow RSS feeds
 
 export async function POST(req: Request) {
-  // Allow either admin key OR a Railway cron header (X-Cron-Secret matches CRON_SECRET env)
+  // Three tiers of access:
+  //   - cron secret header → no rate limit
+  //   - admin key          → no rate limit
+  //   - public anonymous   → strict rate limit (1 per IP per 2 min)
   const cronSecret = process.env.CRON_SECRET;
   const cronHeader = req.headers.get('x-cron-secret');
   const isCron = !!cronSecret && cronHeader === cronSecret;
-  if (!isCron && !isAuthorizedAdmin(req)) {
-    return new Response('forbidden', { status: 403 });
-  }
+  const isAdmin = isAuthorizedAdmin(req);
 
-  // Soft cap so a runaway cron doesn't hammer external feeds
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'cron';
-  const limit = rateLimit(`harvest:${ip}`, 4, 60);
-  if (!limit.allowed) {
-    return Response.json({ error: 'rate_limited', retry_after_sec: limit.retryAfterSec }, { status: 429 });
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+  if (!isCron && !isAdmin) {
+    const limit = rateLimit(`harvest:public:${ip}`, 1, 120);
+    if (!limit.allowed) {
+      return Response.json({
+        error: 'Someone just refreshed sources. Try again shortly.',
+        retry_after_sec: limit.retryAfterSec,
+      }, { status: 429 });
+    }
+  } else {
+    const limit = rateLimit(`harvest:priv:${ip}`, 6, 60);
+    if (!limit.allowed) {
+      return Response.json({ error: 'rate_limited', retry_after_sec: limit.retryAfterSec }, { status: 429 });
+    }
   }
 
   let body: { city?: 'nyc' | 'guatemala_city'; sessionId?: string };
