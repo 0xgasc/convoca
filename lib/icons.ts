@@ -4,8 +4,8 @@
 
 import {
   Megaphone, Footprints, Building2, Scale, HeartHandshake, HandHeart,
-  Users, BookOpen, Flame, Flower2, Wrench, Stethoscope, Zap, Palette,
-  Ticket, ShoppingBag, PartyPopper, MapPin,
+  Users, Flame, Flower2, Wrench, Stethoscope, Zap, Palette,
+  BookOpen, Ticket, ShoppingBag, PartyPopper, MapPin,
   ShieldAlert, Shield, CornerDownRight, AlertTriangle, AlertOctagon,
   HelpCircle, Plus, Home, Package, Ban, Car,
   Target, Telescope, Antenna, Eye, Link2, Star, Music2, Cog,
@@ -55,6 +55,7 @@ export const AGENT_ICON: Record<string, LucideIcon> = {
   discovery: Telescope,
   harvester: Antenna,
   vision_extractor: Eye,
+  text_extractor: BookOpen,
   dedup: Link2,
   recommender: Star,
   curator: Sparkles,

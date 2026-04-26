@@ -5,7 +5,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
-import { VISION_PROMPT } from './prompts';
+import { VISION_PROMPT, TEXT_EXTRACTOR_PROMPT } from './prompts';
 import { logAgentRun } from './traces';
 import { prisma } from '@/lib/db';
 import { CAUSE_VOCABULARY, EVENT_TYPES, ACTION_TYPES } from '@/lib/constants';
@@ -186,6 +186,131 @@ export async function runVisionExtractor(
     sessionId: input.sessionId,
     agentName: 'vision_extractor',
     inputSummary: `image: ${shortUrl(input.imageUrl ?? 'buffer')}`,
+    outputSummary: `${event.title} — ${event.event_type} — conf ${event.confidence.toFixed(2)}`,
+    reasoningTrace: event,
+    durationMs: Date.now() - startedAt,
+    model: 'claude-opus-4-7',
+  });
+
+  return event;
+}
+
+// -----------------------------------------------------------------------------
+// Text-only sibling — for harvested RSS / API / JSON posts that have no image
+// -----------------------------------------------------------------------------
+
+export interface TextExtractorInput {
+  postText: string;
+  postUrl?: string;
+  rawPostId?: string;
+  city: 'nyc' | 'guatemala_city';
+  currentDate: string;
+  sessionId: string;
+}
+
+export async function runTextExtractor(input: TextExtractorInput): Promise<ExtractedEvent | null> {
+  const startedAt = Date.now();
+
+  if (!input.postText || input.postText.trim().length < 10) return null;
+
+  const prompt = TEXT_EXTRACTOR_PROMPT({
+    city: input.city,
+    currentDate: input.currentDate,
+    postText: input.postText,
+    postUrl: input.postUrl,
+  });
+
+  let response: Anthropic.Messages.Message;
+  try {
+    response = await anthropic.messages.create({
+      model: 'claude-opus-4-7',
+      max_tokens: 1500,
+      messages: [{ role: 'user', content: prompt }],
+    });
+  } catch (err) {
+    console.error('[text-extract] anthropic call failed', err);
+    return null;
+  }
+
+  const textBlock = response.content.find(b => b.type === 'text');
+  const rawText = textBlock?.type === 'text' ? textBlock.text : '';
+  const parsed = safeJsonParse(rawText);
+  if (!parsed) return null;
+
+  const validation = ExtractedEventSchema.safeParse(parsed);
+  if (!validation.success) {
+    await logAgentRun({
+      sessionId: input.sessionId,
+      agentName: 'text_extractor',
+      inputSummary: input.postText.slice(0, 80),
+      outputSummary: 'schema_validation_failed',
+      reasoningTrace: { rawResponse: parsed, errors: validation.error.issues },
+      durationMs: Date.now() - startedAt,
+      model: 'claude-opus-4-7',
+    });
+    return null;
+  }
+
+  const event = validation.data as ExtractedEvent;
+
+  if (!event.is_event) {
+    await logAgentRun({
+      sessionId: input.sessionId,
+      agentName: 'text_extractor',
+      inputSummary: input.postText.slice(0, 80),
+      outputSummary: 'not_an_event',
+      reasoningTrace: { confidence_notes: event.confidence_notes },
+      durationMs: Date.now() - startedAt,
+      model: 'claude-opus-4-7',
+    });
+    return event;
+  }
+
+  if (event.location_text && event.location_specificity !== 'online' && event.location_specificity !== 'vague') {
+    const geocoded = await geocode(event.location_text, input.city);
+    if (geocoded) {
+      (event as ExtractedEvent & { lat?: number; lng?: number }).lat = geocoded.lat;
+      (event as ExtractedEvent & { lat?: number; lng?: number }).lng = geocoded.lng;
+    }
+  }
+
+  if (input.rawPostId) {
+    try {
+      const inserted = await prisma.event.create({
+        data: {
+          city_slug: input.city,
+          title: event.title,
+          event_type: event.event_type,
+          action_type: event.action_type,
+          datetime_iso: event.datetime_iso ? new Date(event.datetime_iso) : null,
+          datetime_text_raw: event.datetime_text_raw,
+          end_datetime_iso: event.end_datetime_iso ? new Date(event.end_datetime_iso) : null,
+          location_text: event.location_text,
+          location_specificity: event.location_specificity,
+          lat: (event as { lat?: number }).lat ?? null,
+          lng: (event as { lng?: number }).lng ?? null,
+          organizer: event.organizer,
+          cause_tags: event.cause_tags,
+          language: event.language,
+          signup_url: event.signup_url ?? input.postUrl ?? null,
+          capacity: event.capacity,
+          extraction_confidence: event.confidence,
+          status: 'upcoming',
+        },
+        select: { id: true },
+      });
+      await prisma.eventSource.create({
+        data: { event_id: inserted.id, raw_post_id: input.rawPostId },
+      });
+    } catch (err) {
+      console.error('[text-extract] persist failed', err);
+    }
+  }
+
+  await logAgentRun({
+    sessionId: input.sessionId,
+    agentName: 'text_extractor',
+    inputSummary: input.postText.slice(0, 80),
     outputSummary: `${event.title} — ${event.event_type} — conf ${event.confidence.toFixed(2)}`,
     reasoningTrace: event,
     durationMs: Date.now() - startedAt,

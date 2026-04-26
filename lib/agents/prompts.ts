@@ -182,6 +182,71 @@ Resolution rules:
 Output strictly valid JSON. No prose outside the object.`;
 
 // =============================================================================
+// 4b. TEXT EXTRACTOR — sibling of vision, for harvested RSS / JSON / API posts
+// =============================================================================
+
+export const TEXT_EXTRACTOR_PROMPT = (params: {
+  city: 'nyc' | 'guatemala_city';
+  currentDate: string;
+  postText: string;
+  postUrl?: string;
+}) => `You extract civic engagement event details from a text post pulled
+from a public RSS feed, government API, or org calendar. The post may
+already be cleanly structured (title + location + datetime) or it may
+be free-text. Most posts for ${params.city === 'nyc' ? 'NYC' : 'Guatemala City'}
+will be in ${params.city === 'nyc' ? 'English, sometimes Spanish' : 'Spanish, sometimes English'}.
+
+If a field is missing or ambiguous, set to null and explain in
+confidence_notes. Never invent details. If the text is not a civic
+engagement event (commercial, branded marketing, ticketed concert,
+restaurant promo), set is_event=false and stop.
+
+City: ${params.city}
+Current date (resolve relative dates against this): ${params.currentDate}
+Reference timezone: ${params.city === 'nyc' ? 'America/New_York' : 'America/Guatemala'}
+${params.postUrl ? `Original URL: ${params.postUrl}\n` : ''}
+Post text:
+"""
+${params.postText.slice(0, 4000)}
+"""
+
+Return JSON only, same shape as the vision extractor:
+{
+  "is_event": boolean,
+  "title": string,
+  "event_type": "protest"|"march"|"rally"|"town_hall"|"public_hearing"|"volunteer_opportunity"|"mutual_aid_distribution"|"community_meeting"|"teach_in"|"vigil"|"commemoration"|"skill_share"|"clinic"|"direct_action"|"cultural_event"|"free_public_program"|"community_market"|"block_party"|"other",
+  "action_type": "attend"|"rsvp"|"register"|"bring_supplies"|"donate"|"amplify",
+  "datetime_iso": "ISO-8601" | null,
+  "datetime_text_raw": "exactly as written in the source",
+  "end_datetime_iso": "ISO-8601" | null,
+  "location_text": string,
+  "location_specificity": "exact_address"|"landmark"|"neighborhood"|"vague"|"online",
+  "organizer": string | null,
+  "cause_tags": [string],
+  "language": "en"|"es"|"mixed",
+  "signup_url": string | null,
+  "capacity": number | null,
+  "supplies_needed": [string],
+  "raw_text_extracted": string,
+  "confidence": 0.0-1.0,
+  "confidence_notes": string
+}
+
+Cause vocabulary (use only these):
+${CAUSE_VOCABULARY.join(', ')}
+
+Resolution rules:
+- "this Saturday" / "este sábado" → resolve against current date
+- A government permitted-event row → "town_hall" or "public_hearing" if civic deliberation; "free_public_program" if cultural; otherwise "community_market" or "other"
+- An RSS item with no concrete date and only a "join us" call → set is_event=false (it's marketing, not an event)
+- "From: 2026-04-26 to 2026-04-26" patterns → datetime_iso uses the start; end_datetime_iso uses the end if different
+- If the post lists a specific street address → location_specificity: exact_address
+- Council-style chamber location ("250 Broadway Hearing Room") → exact_address
+- Borough-only ("Brooklyn") → neighborhood
+
+Output strictly valid JSON. No prose outside the object.`;
+
+// =============================================================================
 // 5. DEDUP — the showpiece reasoning agent
 // =============================================================================
 

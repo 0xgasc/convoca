@@ -85,7 +85,7 @@ export default function AdminPage() {
       setRuns(r.runs ?? []);
       if (qRes.ok) {
         const q = await qRes.json();
-        setQueueDepth(q.pending_with_images ?? 0);
+        setQueueDepth(q.pending_processable ?? 0);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -177,7 +177,7 @@ export default function AdminPage() {
                 });
                 const json = await res.json();
                 if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-                setProcessResult(`Vision: processed ${json.processed}, created ${json.created_events} events, skipped ${json.skipped} in ${(json.duration_ms / 1000).toFixed(1)}s`);
+                setProcessResult(`Processed ${json.processed} (vision: ${json.via_vision ?? 0}, text: ${json.via_text ?? 0}) → ${json.created_events} new events in ${(json.duration_ms / 1000).toFixed(1)}s`);
                 void load(key);
               } catch (err) {
                 setProcessResult(`Failed: ${err instanceof Error ? err.message : String(err)}`);
