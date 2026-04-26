@@ -31,6 +31,7 @@ export async function POST(req: Request) {
   let imageBuffer: Buffer | undefined;
   let imageMediaType: ImageMedia | undefined;
   let turnstileToken: string | null = null;
+  let _explicitSourceImageUrl: string | undefined;
 
   if (contentType.includes('multipart/form-data')) {
     const form = await req.formData();
@@ -58,6 +59,13 @@ export async function POST(req: Request) {
       payload = String(body.text);
     } else {
       return badRequest('Provide one of: image (multipart), url, or text');
+    }
+
+    // Caller-provided permanent image URL (e.g. Stash/Arweave). When set, we
+    // treat the URL as an image submission and pass it straight to the
+    // vision agent — no fetching of OG metadata.
+    if (body.source_image_url) {
+      _explicitSourceImageUrl = String(body.source_image_url);
     }
   }
 
@@ -103,6 +111,7 @@ export async function POST(req: Request) {
     sessionId,
     imageBuffer,
     imageMediaType,
+    explicitSourceImageUrl: _explicitSourceImageUrl,
   });
 
   return Response.json({
@@ -120,6 +129,7 @@ interface ProcessInput {
   sessionId: string;
   imageBuffer?: Buffer;
   imageMediaType?: ImageMedia;
+  explicitSourceImageUrl?: string;
 }
 
 async function processSubmission(input: ProcessInput): Promise<void> {
@@ -136,10 +146,17 @@ async function processSubmission(input: ProcessInput): Promise<void> {
     let sourceImageUrl: string | undefined;
 
     if (input.submissionType === 'url') {
-      const meta = await fetchUrlMetadata(input.payload);
-      imageUrl = meta.imageUrl ?? undefined;
-      sourceImageUrl = imageUrl ?? input.payload;
-      postText = meta.text;
+      // If caller pre-uploaded to Stash/etc and gave us an explicit image URL,
+      // skip OG fetching and treat the URL as the image directly.
+      if (input.explicitSourceImageUrl) {
+        imageUrl = input.explicitSourceImageUrl;
+        sourceImageUrl = input.explicitSourceImageUrl;
+      } else {
+        const meta = await fetchUrlMetadata(input.payload);
+        imageUrl = meta.imageUrl ?? undefined;
+        sourceImageUrl = imageUrl ?? input.payload;
+        postText = meta.text;
+      }
     } else if (input.submissionType === 'text') {
       postText = input.payload;
     }

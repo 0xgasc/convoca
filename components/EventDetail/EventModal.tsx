@@ -112,6 +112,24 @@ export function EventModal({ eventId, sessionId, isVerified, onClose, onRequestS
 
         {event && !loading && (
           <div className="p-4 space-y-5">
+            {/* Flyer image (if a permanent URL was stored) */}
+            {event.source_image_url && (
+              <a
+                href={event.source_image_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block rounded-lg overflow-hidden border border-neutral-200 bg-neutral-100"
+                title={lang === 'es' ? 'Ver flyer original' : 'View original flyer'}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={event.source_image_url}
+                  alt={event.title}
+                  className="w-full max-h-96 object-contain"
+                />
+              </a>
+            )}
+
             {/* Title block */}
             <div>
               <h1 className="text-xl font-semibold text-neutral-900 leading-snug">{event.title}</h1>

@@ -42,6 +42,7 @@
 | GitHub | ✓ private repo, auto-pushed | — |
 | Resend magic-link sign-in | ⚠ falls back to **auto-verify** if not set | `RESEND_API_KEY`, `RESEND_FROM` |
 | Cloudflare Turnstile | ⚠ no-op if not set | `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` |
+| Stash / Aeter (permanent flyer storage) | ✓ wired (defaults to public Stash prod) | `NEXT_PUBLIC_STASH_SERVER` |
 | Voyage AI embeddings | ⚠ optional, dedup uses recent-window heuristic | `VOYAGE_API_KEY` |
 | Cron-driven harvest | ⚠ manual via admin button until `CRON_SECRET` + external scheduler set | `CRON_SECRET` |
 
