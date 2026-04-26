@@ -13,6 +13,9 @@ import { SignInModal } from '@/components/Auth/SignInModal';
 import { EventModal } from '@/components/EventDetail/EventModal';
 import { SchedulePanel } from '@/components/Schedule/SchedulePanel';
 import { CurateCardStack } from '@/components/Curate/CurateCardStack';
+import { FilterPanel, type EventFilters, EMPTY_FILTERS, filtersAreEmpty, filtersToQueryString } from '@/components/Filter/FilterPanel';
+import { CAUSE_DISPLAY, EVENT_TYPE_DISPLAY, NYC_BOROUGHS } from '@/lib/constants';
+import { Filter as FilterIcon, X as XIcon } from 'lucide-react';
 import { CITIES } from '@/lib/constants';
 import type { CanonicalEvent, CitySlug } from '@/lib/types';
 
@@ -59,6 +62,8 @@ export default function Home() {
   const [openEventId, setOpenEventId] = useState<string | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showCurate, setShowCurate] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<EventFilters>(EMPTY_FILTERS);
   const [toast, setToast] = useState<string | null>(null);
 
   // Bootstrap session
@@ -108,10 +113,12 @@ export default function Home() {
     return () => clearInterval(t);
   }, [sessionId, refreshSession]);
 
-  const loadEvents = useCallback(async () => {
+  const loadEvents = useCallback(async (activeFilters?: EventFilters) => {
     setEventsError(null);
+    const f = activeFilters ?? filters;
+    const qs = filtersToQueryString(f, city);
     try {
-      const res = await fetch(`/api/events?city=${city}`);
+      const res = await fetch(`/api/events?${qs}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       setEvents(json.events ?? []);
@@ -119,7 +126,7 @@ export default function Home() {
       setEventsError(err instanceof Error ? err.message : String(err));
       setEvents([]);
     }
-  }, [city]);
+  }, [city, filters]);
 
   const loadFlags = useCallback(async () => {
     try {
@@ -225,6 +232,18 @@ export default function Home() {
             <Languages className="w-3.5 h-3.5" />
             {language === 'en' ? 'es' : 'en'}
           </button>
+          <button
+            onClick={() => setShowFilters(true)}
+            className={`inline-flex items-center gap-1 text-xs px-2 py-1 border rounded ${filtersAreEmpty(filters) ? 'border-neutral-200 text-neutral-700 hover:text-neutral-900' : 'border-neutral-900 bg-neutral-900 text-white'}`}
+          >
+            <FilterIcon className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{language === 'es' ? 'Filtros' : 'Filters'}</span>
+            {!filtersAreEmpty(filters) && (
+              <span className="ml-0.5 text-[10px] bg-white text-neutral-900 rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                {filters.causes.length + filters.event_types.length + filters.action_types.length + filters.boroughs.length}
+              </span>
+            )}
+          </button>
           <span className="hidden md:inline text-xs text-neutral-500">
             {events.length} {language === 'es' ? 'eventos' : 'events'} · {flags.length} {language === 'es' ? 'avisos' : 'flags'}
           </span>
@@ -273,6 +292,56 @@ export default function Home() {
           )}
         </div>
       </header>
+
+      {/* Active filter chip strip */}
+      {!filtersAreEmpty(filters) && (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-neutral-200 bg-neutral-50 overflow-x-auto flex-shrink-0">
+          <span className="text-xs text-neutral-500 flex-shrink-0">{language === 'es' ? 'Filtros:' : 'Filters:'}</span>
+          {filters.boroughs.map(b => {
+            const meta = NYC_BOROUGHS.find(x => x.slug === b);
+            return (
+              <ActiveChip key={b} label={meta?.name ?? b} onRemove={() => {
+                const next = { ...filters, boroughs: filters.boroughs.filter(x => x !== b) };
+                setFilters(next);
+                void loadEvents(next);
+              }} />
+            );
+          })}
+          {filters.causes.map(c => {
+            const meta = CAUSE_DISPLAY[c];
+            return (
+              <ActiveChip key={c} label={meta ? (language === 'es' ? meta.label_es : meta.label_en) : c} onRemove={() => {
+                const next = { ...filters, causes: filters.causes.filter(x => x !== c) };
+                setFilters(next);
+                void loadEvents(next);
+              }} />
+            );
+          })}
+          {filters.event_types.map(t => {
+            const meta = EVENT_TYPE_DISPLAY[t] ?? EVENT_TYPE_DISPLAY.other;
+            return (
+              <ActiveChip key={t} label={language === 'es' ? meta.label_es : meta.label_en} onRemove={() => {
+                const next = { ...filters, event_types: filters.event_types.filter(x => x !== t) };
+                setFilters(next);
+                void loadEvents(next);
+              }} />
+            );
+          })}
+          {filters.action_types.map(a => (
+            <ActiveChip key={a} label={a.replace(/_/g, ' ')} onRemove={() => {
+              const next = { ...filters, action_types: filters.action_types.filter(x => x !== a) };
+              setFilters(next);
+              void loadEvents(next);
+            }} />
+          ))}
+          <button
+            onClick={() => { setFilters(EMPTY_FILTERS); void loadEvents(EMPTY_FILTERS); }}
+            className="text-xs text-neutral-500 hover:text-neutral-800 ml-1 flex-shrink-0"
+          >
+            {language === 'es' ? 'Limpiar' : 'Clear all'}
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 grid grid-cols-1 md:grid-cols-[1fr_420px] overflow-hidden">
         <section className="relative border-r border-neutral-200 min-h-0">
@@ -415,11 +484,32 @@ export default function Home() {
         />
       )}
 
+      {showFilters && (
+        <FilterPanel
+          city={city}
+          initial={filters}
+          language={language}
+          onApply={f => { setFilters(f); void loadEvents(f); }}
+          onClose={() => setShowFilters(false)}
+        />
+      )}
+
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-neutral-900 text-white text-sm shadow-lg z-50">
           {toast}
         </div>
       )}
     </main>
+  );
+}
+
+function ActiveChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs bg-neutral-900 text-white px-2 py-0.5 rounded-full flex-shrink-0">
+      {label}
+      <button onClick={onRemove} className="hover:opacity-70">
+        <XIcon className="w-3 h-3" />
+      </button>
+    </span>
   );
 }

@@ -173,7 +173,7 @@ export default function AdminPage() {
                 const res = await fetch(`/api/process-queue?key=${encodeURIComponent(key)}`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ city: 'nyc', limit: 6 }),
+                  body: JSON.stringify({ city: 'nyc', limit: 50 }),
                 });
                 const json = await res.json();
                 if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
@@ -187,7 +187,7 @@ export default function AdminPage() {
             }}
             disabled={processing || queueDepth === 0}
             className="text-xs px-2 py-1 rounded border border-neutral-700 hover:bg-neutral-800 disabled:opacity-50 inline-flex items-center gap-1.5"
-            title={`Run vision extractor on up to 6 pending posts${queueDepth != null ? ` (${queueDepth} in queue)` : ''}`}
+            title={`Run vision/text extractor on up to 50 pending posts${queueDepth != null ? ` (${queueDepth} in queue)` : ''}`}
           >
             {processing ? <Loader2 className="w-3 h-3 animate-spin" /> : <span>👁</span>}
             {processing ? 'Processing...' : `Process queue${queueDepth != null ? ` (${queueDepth})` : ''}`}

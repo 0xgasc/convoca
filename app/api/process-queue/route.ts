@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   let body: { city?: 'nyc' | 'guatemala_city'; limit?: number };
   try { body = await req.json(); } catch { body = {}; }
 
-  const limit = Math.min(body.limit ?? 6, 20);
+  const limit = Math.min(body.limit ?? 25, 100);
   const startedAt = Date.now();
 
   const usedRawPostIds = await prisma.eventSource.findMany({ select: { raw_post_id: true } });
