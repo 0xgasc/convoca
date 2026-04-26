@@ -10,16 +10,20 @@
 - **Repo**: https://github.com/0xgasc/convoca (private)
 - **Railway project**: https://railway.com/project/5cd66f06-1c2d-48f1-a345-0ec54bc7c702
 
-## Architecture (final)
+## Architecture
 
 ```
-                Browser (Mapbox GL + AgentTrace SSE)
+                Browser (Mapbox GL + AgentTrace SSE + EventModal + Schedule panel)
                           │
                 Railway: convoca-web (Next.js 14)
                           │
               Railway: Postgres 16 + pgvector
                           │
            Anthropic API (Opus 4.7 + Haiku 4.5)
+                          │
+          Resend (optional, for magic-link sign-in)
+                          │
+     Cloudflare Turnstile (optional, for bot-check on /submit)
 ```
 
 - **Database**: Railway Postgres with pgvector extension. Schema managed by Prisma 6.
@@ -28,14 +32,45 @@
 
 ## What's wired
 
-| Service | Status |
-|---|---|
-| Postgres (Railway) | ✓ live, schema pushed via `prisma db push`, 40 sources + 12 flag types + 2 cities seeded |
-| Web app (Railway) | ✓ live, public domain generated, build green |
-| Anthropic API | ✓ key in Railway env |
-| Mapbox | ✓ public token in Railway env (NEXT_PUBLIC + server-side) |
-| GitHub | ✓ private repo, auto-pushed |
-| Voyage AI (embeddings) | ✗ optional — dedup currently uses recent-window heuristic, not embeddings |
+| Service | Status | Env var |
+|---|---|---|
+| Postgres (Railway) | ✓ live, schema pushed via `prisma db push` | `DATABASE_URL` |
+| Web app (Railway) | ✓ live, public domain generated | — |
+| Anthropic API | ✓ key in Railway env | `ANTHROPIC_API_KEY` |
+| Mapbox tiles + geocoding | ✓ public token in env | `NEXT_PUBLIC_MAPBOX_TOKEN`, `MAPBOX_TOKEN` |
+| Admin gate | ✓ enabled | `ADMIN_KEY` |
+| GitHub | ✓ private repo, auto-pushed | — |
+| Resend magic-link sign-in | ⚠ falls back to **auto-verify** if not set | `RESEND_API_KEY`, `RESEND_FROM` |
+| Cloudflare Turnstile | ⚠ no-op if not set | `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` |
+| Voyage AI embeddings | ⚠ optional, dedup uses recent-window heuristic | `VOYAGE_API_KEY` |
+| Cron-driven harvest | ⚠ manual via admin button until `CRON_SECRET` + external scheduler set | `CRON_SECRET` |
+
+## Seeded content
+
+| Table | Count | Source |
+|---|---|---|
+| `cities` | 2 | nyc, guatemala_city |
+| `flag_type_config` | 12 | seeded by `npm run seed:demo`-ish path |
+| `sources` | 40 | `npm run seed:sources` (NYC + Guate) |
+| `events` | 17 | `npm run seed:demo` (12 NYC + 3-source dedup trio + 2 Guate) |
+| `event_flags` | 10 | also from `seed:demo` |
+
+Both seed scripts are idempotent — `seed:demo` wipes prior `[DEMO]` rows first.
+
+## Agents (7 in production)
+
+| Agent | Model | Triggered by | Where |
+|---|---|---|---|
+| **intent_parse** | Opus 4.7 | every chat prompt | every orchestrator run |
+| **discovery** | Opus 4.7 | (skipped by default) | orchestrator with `skipDiscovery: false` |
+| **harvester** | Haiku 4.5 (triage) | manual via `/admin` Run harvester button, or `/api/harvest` POST with `X-Cron-Secret` header | scrapes seeded RSS / Mobilize / NYC Open Data / Legistar feeds |
+| **vision_extractor** | Opus 4.7 (vision) | flyer drop on `/submit`, or chat orchestrator iterating over `raw_posts` with `has_event_signal=true` | `/api/submit`, `/api/orchestrate` |
+| **dedup** | Opus 4.7 | inside the orchestrator after vision | `/api/orchestrate` |
+| **recommender** | Opus 4.7 | inside the orchestrator after dedup (default branch) | `/api/orchestrate` |
+| **scheduler** | Opus 4.7 | (1) "plan my Saturday" / "schedule" / "agenda" keywords in chat → orchestrator routes here instead of recommender; (2) Schedule panel button on home; (3) `/api/schedule` POST | modular, also callable standalone |
+| **safety_review** | Opus 4.7 | every flag submit + every comment | `/api/flags`, `/api/events/[id]/comments` |
+
+Every run is logged to `agent_runs` with input/output summary + reasoning trace + duration. Visible at `/admin`.
 
 ## Re-deploy
 
@@ -45,10 +80,17 @@ git push                 # commit anything you want first
 railway up --detach      # uploads local source, builds, deploys
 ```
 
-Railway environment vars are persistent. To update one:
+If `railway status` shows the wrong project, re-link:
 
 ```bash
-railway variables -s convoca-web --set "ANTHROPIC_API_KEY=sk-ant-..."
+railway link --project 5cd66f06-1c2d-48f1-a345-0ec54bc7c702 \
+              --service convoca-web --environment production
+```
+
+To update an env var:
+
+```bash
+railway variable set "RESEND_API_KEY=re_..." -s convoca-web
 ```
 
 To stream logs:
@@ -61,7 +103,7 @@ railway logs -s convoca-web
 
 ```bash
 npm run seed:sources    # 40 sources (idempotent)
-npm run seed:demo       # 17 demo events + 10 flags (wipes prior [DEMO] rows first)
+npm run seed:demo       # 17 events + 10 flags (wipes prior [DEMO] rows first)
 ```
 
 Both scripts read `DATABASE_URL` from `.env.local` (Railway public proxy).
@@ -75,36 +117,70 @@ npm run dev      # localhost:3000
 
 `.env.local` already contains live Anthropic + Mapbox keys + Railway Postgres `DATABASE_URL` (public proxy). It is gitignored.
 
+## Demo video
+
+See [`DEMO_SCRIPT.md`](./DEMO_SCRIPT.md) for the 3-minute script (7 scenes, voiceover lines, on-screen cues).
+
+```bash
+cd remotion
+npm install              # ~150 MB on first install
+npm run preview          # Remotion Studio at localhost:3000
+npm run build            # renders to out/convoca-demo.mp4
+```
+
+Drop a 180-second voiceover MP3 at `remotion/public/voiceover.mp3` and uncomment the `<Audio>` line in `src/compositions/MainSequence.tsx` to bake it in.
+
+## How users trigger agents
+
+| Action on the site | Agent fires |
+|---|---|
+| Type any prompt in chat | `intent_parse` (always) → `vision_extractor` (if there are unprocessed `raw_posts` with images) → `dedup` → `recommender` |
+| Type "plan my Saturday" / "schedule" / "agenda" / "itinerary" / "build my day" | `intent_parse` → `scheduler` (instead of recommender) — uses the user's saved events |
+| Drop a flyer at `/submit` | `vision_extractor` |
+| Click map / event "Add a flag" → submit | `safety_review` |
+| Post a comment on an event | `safety_review` |
+| Click **Run harvester** in admin (or POST `/api/harvest`) | `harvester` (Haiku triage on every fetched post) |
+| Click **Plan** in Schedule panel | `scheduler` (standalone path) |
+
 ## What's deliberately missing
 
-- **Persistent flyer image storage**: dropped. If you later want a flyer gallery on the event detail page, bolt on Cloudflare R2 (or just keep the `source_image_url` URL we already store on `events`).
-- **Voyage AI embeddings for dedup**: dedup currently uses a city + recent-hours window heuristic before judging with Opus. Embedding-based shortlist is a one-day add when needed.
-- **Hardened harvester adapters**: RSS, ICS, Mobilize, NYC Open Data, and Legistar adapters work but use minimal parsers. `telegram_public`, `eventbrite_api`, `website_scrape` are stubs.
-- **Vision extractor iteration**: per CLAUDE.md, this is the highest-leverage prompt — plan to spend a third of remaining time on `VISION_PROMPT` in [`lib/agents/prompts.ts`](./lib/agents/prompts.ts) using real flyer fixtures.
+- **Persistent flyer image storage** — dropped. Add Cloudflare R2 if needed; we already store `source_image_url` on `events` for URL submissions.
+- **Hardened harvester adapters** — RSS, ICS, Mobilize, NYC Open Data, Legistar work but use minimal parsers; `telegram_public`, `eventbrite_api`, `website_scrape` are stubs.
+- **Vision extractor iteration** — highest-leverage prompt; needs real flyer fixtures for `npm run test:vision` (script not yet written).
+- **Voyage AI embeddings for dedup** — heuristic shortlist works at hackathon scale.
 
-## Roadmap (post-MVP, surfaced from user feedback)
+## Roadmap
 
-| Item | Why | Sketch |
-|---|---|---|
-| Real bot/human verification on `/submit` | Current rate limit (10/session/h, 30/IP/h) blocks naive abuse but not a determined attacker. | Drop in **Cloudflare Turnstile** (free, no Personal Data) on the DropZone — verify token in `/api/submit`. ~1 hour. |
-| Per-event comments / discussion thread | Several user requests; lets attendees coordinate inside the event page. | New `event_comments` Prisma model + a `Comments` client component on `/events/[id]`. Pipe each new comment through Safety Review like flags. ~3 hours. |
-| Confirm-flag / "I see this too" UI | API exists at `/api/flags/[id]/confirm` but no button surfaces it yet. | Add a button on the FlagOverlay popup. ~30 min. |
-| Sign-in (light) | So community-trusted reporters get higher trust on flags + comments. | Magic-link via Resend → `user_sessions` row keyed by email hash, no profile. |
-| Public agent-runs view | The `/admin` page is gated; non-admins should still see "X agents running right now" as social proof. | Read-only counts at `/api/public/agent-stats`. |
-| Vision extractor seed flyers | The dedup wow is hand-crafted right now. Real flyers from `/public/seed-flyers/` + `npm run test:vision` to iterate `VISION_PROMPT`. |
+| Item | Status |
+|---|---|
+| Saved events + per-user schedule | ✓ shipped (modal + Scheduler agent) |
+| Comments per event with Safety Review | ✓ shipped |
+| Sign-in required to flag / comment | ✓ shipped (Resend magic-link with auto-verify fallback) |
+| Cloudflare Turnstile bot check on submit | ✓ wired, just needs keys |
+| Manual harvest trigger | ✓ shipped (admin button + `/api/harvest`) |
+| Confirm-flag / "I see this too" button | ⚠ API exists at `/api/flags/[id]/confirm`; no UI yet |
+| Public "agents running right now" counter | not started |
+| Cron'd harvest every 30 min | not started — set `CRON_SECRET` and use [cron-job.org](https://cron-job.org) to hit `/api/harvest` with the header |
 
 ## Open decisions
 
 - **Make repo public?** Currently private. CLAUDE.md says "Public repo from day one." Flip with: `gh repo edit 0xgasc/convoca --visibility public`
-- **Custom domain** (e.g. `convoca.app`)? Add to Railway with `railway domain --custom your.domain` after pointing DNS to the auto-generated Railway domain.
+- **Custom domain** (e.g. `convoca.app`)? Add to Railway with `railway domain --custom your.domain`.
+- **Add `RESEND_API_KEY`** to upgrade auto-verify sign-in to real magic links.
+- **Add `TURNSTILE_*` keys** to enable real bot-check on `/submit`.
 
 ## Files at a glance
 
 | Path | Purpose |
 |---|---|
-| [`prisma/schema.prisma`](./prisma/schema.prisma) | Source of truth for DB schema |
+| [`prisma/schema.prisma`](./prisma/schema.prisma) | Source of truth for DB schema (10 models incl. EventSave, EventComment) |
 | [`lib/db.ts`](./lib/db.ts) | Prisma client singleton |
-| [`lib/agents/`](./lib/agents/) | The 7 agents + traces |
+| [`lib/auth.ts`](./lib/auth.ts) | Session-based identity + magic-link helpers |
+| [`lib/turnstile.ts`](./lib/turnstile.ts) | Cloudflare Turnstile verification (no-op without keys) |
+| [`lib/icons.ts`](./lib/icons.ts) | Lucide icon registry for event_type / flag_type / agent_name |
+| [`lib/agents/`](./lib/agents/) | The 8 agents + traces |
 | [`scripts/seed-nyc-sources.ts`](./scripts/seed-nyc-sources.ts) | Source registry seeder |
-| [`schema.sql`](./schema.sql) | Original Supabase-flavored SQL — **kept for reference only**, not the source of truth |
+| [`scripts/seed-demo-events.ts`](./scripts/seed-demo-events.ts) | Demo events + flags seeder |
+| [`DEMO_SCRIPT.md`](./DEMO_SCRIPT.md) | 3-min video script with voiceover lines |
+| [`remotion/`](./remotion/) | Separate Node project for the demo video (Remotion compositions) |
 | [`.env.local`](./.env.local) | Local env (Anthropic + Mapbox + DATABASE_URL), gitignored |

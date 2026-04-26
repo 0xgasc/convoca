@@ -5,9 +5,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ClipboardList, Link2, Star, AlertTriangle } from 'lucide-react';
+import { ClipboardList, Link2, Star, AlertTriangle, Calendar } from 'lucide-react';
 import { getAgentIcon } from '@/lib/icons';
 import type { AgentEvent, AgentName } from '@/lib/agents/orchestrator';
+import type { ScheduleResult } from '@/lib/agents/scheduler';
 
 interface AgentTraceProps {
   prompt: string | null;
@@ -32,6 +33,7 @@ const AGENTS: Array<{ name: AgentName; label: string }> = [
   { name: 'vision_extractor', label: 'Vision' },
   { name: 'dedup', label: 'Dedup' },
   { name: 'recommender', label: 'Rank' },
+  { name: 'scheduler', label: 'Schedule' },
 ];
 
 export function AgentTrace({ prompt, sessionId, city, onComplete }: AgentTraceProps) {
@@ -130,6 +132,10 @@ export function AgentTrace({ prompt, sessionId, city, onComplete }: AgentTracePr
         setTraces(prev => [...prev, { kind: 'recommendation', eventId: event.eventId, score: event.score, reasoning: event.reasoning, time: Date.now() }]);
         break;
 
+      case 'scheduled':
+        setTraces(prev => [...prev, { kind: 'scheduled', schedule: event.schedule, time: Date.now() }]);
+        break;
+
       case 'final_result':
         AGENTS.forEach(a => {
           setAgents(prev => prev[a.name].status === 'running' ? { ...prev, [a.name]: { ...prev[a.name], status: 'done' } } : prev);
@@ -192,6 +198,7 @@ type TraceEntry =
   | { kind: 'extracted'; title: string; confidence: number; time: number }
   | { kind: 'merged'; title: string; mergedFromCount: number; steps: string[]; time: number }
   | { kind: 'recommendation'; eventId: string; score: number; reasoning: string; time: number }
+  | { kind: 'scheduled'; schedule: ScheduleResult; time: number }
   | { kind: 'error'; message: string; time: number };
 
 function TraceItem({ trace }: { trace: TraceEntry }) {
@@ -249,6 +256,31 @@ function TraceItem({ trace }: { trace: TraceEntry }) {
             <Star className="w-3 h-3" /> {(trace.score * 100).toFixed(0)}%
           </div>
           <div className="text-neutral-700 text-sm">{trace.reasoning}</div>
+        </div>
+      );
+    case 'scheduled':
+      return (
+        <div className="bg-amber-50 rounded px-3 py-2 border border-amber-200">
+          <div className="text-amber-900 font-medium inline-flex items-center gap-1.5 mb-1">
+            <Calendar className="w-3.5 h-3.5" />
+            Schedule built
+          </div>
+          <div className="text-sm text-neutral-800 mb-2">{trace.schedule.summary}</div>
+          {trace.schedule.itinerary.length > 0 && (
+            <ol className="space-y-1">
+              {trace.schedule.itinerary.map(it => (
+                <li key={it.event_id} className="flex items-baseline gap-2 text-xs text-neutral-700">
+                  <span className="font-mono text-amber-800 shrink-0">{it.arrival_time_local}</span>
+                  <span className="truncate">{it.reasoning}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+          {trace.schedule.conflicts.length > 0 && (
+            <div className="text-[11px] text-amber-700 mt-1">
+              ⚠ {trace.schedule.conflicts.length} conflict{trace.schedule.conflicts.length === 1 ? '' : 's'}
+            </div>
+          )}
         </div>
       );
     case 'error':

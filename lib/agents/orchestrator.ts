@@ -8,8 +8,20 @@ import { runHarvester } from './harvester';
 import { runVisionExtractor } from './visionExtractor';
 import { runDedup } from './dedup';
 import { runRecommender } from './recommender';
+import { runScheduler, type ScheduleResult } from './scheduler';
 import { prisma } from '@/lib/db';
 import type { ParsedIntent, ExtractedEvent, CanonicalEvent } from '@/lib/types';
+
+const SCHEDULE_KEYWORDS = [
+  'plan my', 'planeá', 'plan mi', 'schedule my', 'agenda', 'itinerary', 'itinerario',
+  'organize my', 'build my day', 'build my week', 'build me a',
+  'what should i do', 'que debería hacer', 'que voy a hacer',
+];
+
+function isScheduleQuery(prompt: string): boolean {
+  const p = prompt.toLowerCase();
+  return SCHEDULE_KEYWORDS.some(k => p.includes(k));
+}
 
 export type AgentEvent =
   | { type: 'status'; agent: AgentName; message: string }
@@ -19,6 +31,7 @@ export type AgentEvent =
   | { type: 'extracted'; event: ExtractedEvent; rawPostId: string }
   | { type: 'merged'; canonical: CanonicalEvent; mergedFromCount: number; trace: string[] }
   | { type: 'recommendation'; eventId: string; score: number; reasoning: string }
+  | { type: 'scheduled'; schedule: ScheduleResult }
   | { type: 'final_result'; eventIds: string[] }
   | { type: 'error'; message: string }
   | { type: 'done' };
@@ -30,7 +43,8 @@ export type AgentName =
   | 'harvester'
   | 'vision_extractor'
   | 'dedup'
-  | 'recommender';
+  | 'recommender'
+  | 'scheduler';
 
 export interface OrchestrateInput {
   prompt: string;
@@ -125,6 +139,24 @@ export async function orchestrate(input: OrchestrateInput, emit: Emit): Promise<
     },
   });
 
+  // Branch: schedule-y prompt → run Scheduler instead of Recommender
+  if (isScheduleQuery(input.prompt)) {
+    emit({ type: 'status', agent: 'scheduler', message: 'Building your schedule from saved events...' });
+    const saves = await fetchSavedEvents(input.sessionId);
+    const schedule = await runScheduler({
+      userQuery: input.prompt,
+      language: intent.language_filter === 'es' ? 'es' : 'en',
+      savedEvents: saves,
+      sessionId: input.sessionId,
+    });
+    emit({ type: 'scheduled', schedule });
+    emit({
+      type: 'final_result',
+      eventIds: schedule.itinerary.map(i => i.event_id),
+    });
+    return;
+  }
+
   emit({ type: 'status', agent: 'recommender', message: 'Ranking events for you...' });
   const ranked = await runRecommender({
     userPrefs: await fetchUserPrefs(input.sessionId),
@@ -145,6 +177,32 @@ export async function orchestrate(input: OrchestrateInput, emit: Emit): Promise<
     type: 'final_result',
     eventIds: ranked.map(r => r.event_id),
   });
+}
+
+async function fetchSavedEvents(sessionId: string) {
+  const saves = await prisma.eventSave.findMany({
+    where: { session_id: sessionId },
+    include: {
+      event: {
+        select: {
+          id: true, title: true, event_type: true, action_type: true,
+          datetime_iso: true, end_datetime_iso: true, location_text: true,
+          lat: true, lng: true,
+        },
+      },
+    },
+  });
+  return saves.map(s => ({
+    id: s.event.id,
+    title: s.event.title,
+    event_type: s.event.event_type,
+    datetime_iso: s.event.datetime_iso?.toISOString() ?? null,
+    end_datetime_iso: s.event.end_datetime_iso?.toISOString() ?? null,
+    location_text: s.event.location_text,
+    lat: s.event.lat == null ? null : Number(s.event.lat),
+    lng: s.event.lng == null ? null : Number(s.event.lng),
+    action_type: s.event.action_type,
+  }));
 }
 
 async function fetchUnprocessedEventPosts(city: string, limit: number) {
