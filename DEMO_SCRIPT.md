@@ -59,17 +59,17 @@ Voiceover lines are tight (avg 150 wpm). Cues in *italics* are on-screen actions
 
 ---
 
-## Scene 5 — Save + agent-built schedule (2:05 – 2:30)
+## Scene 5 — Curator + agent-built schedule (2:05 – 2:30)
 
-**Remotion**: `Schedule` — a calendar grid for "Saturday" appears empty; saved events fly in from the side; an "Agent" badge spins; an itinerary lays itself out in time order with travel-time chips between cards.
+**Remotion**: `Schedule` — left half: a card stack with three events flicking through, each with a "why this for you" caption from the Curator agent; chosen ones fly into the right half where the Scheduler lays out a Saturday itinerary with travel chips.
 
-*Save three events. Open the Schedule panel. Type "plan my Saturday".*
+*Click "Curate" in the header. The Curator agent surfaces 12 cards based on saved causes + neighborhood. Tap Save on three. Open Schedule → "plan my Saturday".*
 
-> "I save three events I care about. Then I ask the scheduler to plan my Saturday. The agent reads my saves, respects start times, clusters them by neighborhood, flags conflicts."
+> "Convoca has a personal curator. It reads my onboarding causes, my neighborhood, every event I've saved or passed before, and pre-fills a watchlist. One sentence per card explaining why it's for me — and the cards I pass on are negative signal for next time."
 
-*Itinerary renders: 10am food distribution → 1pm housing rally → 4pm vigil. Travel chips between.*
+*Three events get saved. Cut to the schedule view.*
 
-> "10am food distribution in Bushwick. Travel 18 minutes. 1pm housing rally at City Hall. Travel 22 minutes. 4pm vigil. Two events overlapped — it picked one and told me why. This is what an agent layer for civic life looks like."
+> "Then the scheduler takes my saves and builds a Saturday — respecting start times, clustering by neighborhood, flagging conflicts. Curate, save, schedule. The whole personalization journey, three agents."
 
 ---
 
