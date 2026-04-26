@@ -57,18 +57,20 @@
 
 Both seed scripts are idempotent — `seed:demo` wipes prior `[DEMO]` rows first.
 
-## Agents (7 in production)
+## Agents (10 in production)
 
 | Agent | Model | Triggered by | Where |
 |---|---|---|---|
 | **intent_parse** | Opus 4.7 | every chat prompt | every orchestrator run |
 | **discovery** | Opus 4.7 | (skipped by default) | orchestrator with `skipDiscovery: false` |
-| **harvester** | Haiku 4.5 (triage) | manual via `/admin` Run harvester button, or `/api/harvest` POST with `X-Cron-Secret` header | scrapes seeded RSS / Mobilize / NYC Open Data / Legistar feeds |
-| **vision_extractor** | Opus 4.7 (vision) | flyer drop on `/submit`, or chat orchestrator iterating over `raw_posts` with `has_event_signal=true` | `/api/submit`, `/api/orchestrate` |
+| **harvester** | Haiku 4.5 (triage classifier per post) | "Pull fresh events" button in chat panel (public, rate-limited) OR `/admin` Run harvester button OR `/api/harvest` POST with `X-Cron-Secret` header | scrapes seeded RSS / Mobilize / NYC Open Data / Legistar feeds in parallel with per-source 12s timeout |
+| **vision_extractor** | Opus 4.7 (vision) | flyer drop on `/submit`, chat orchestrator iterating over `raw_posts`, OR admin "Process queue" button | `/api/submit`, `/api/orchestrate`, `/api/process-queue` |
 | **dedup** | Opus 4.7 | inside the orchestrator after vision | `/api/orchestrate` |
 | **recommender** | Opus 4.7 | inside the orchestrator after dedup (default branch) | `/api/orchestrate` |
-| **scheduler** | Opus 4.7 | (1) "plan my Saturday" / "schedule" / "agenda" keywords in chat → orchestrator routes here instead of recommender; (2) Schedule panel button on home; (3) `/api/schedule` POST | modular, also callable standalone |
+| **curator** | Opus 4.7 | "Curate" button → reads prefs + saves + passes, returns card stack with per-event "why this for you" | `/api/curate` |
+| **scheduler** | Opus 4.7 | "plan my Saturday" / "schedule" / "agenda" / "itinerary" keywords in chat (orchestrator routes here instead of recommender), OR Schedule panel "Plan" button | `/api/orchestrate`, `/api/schedule` |
 | **safety_review** | Opus 4.7 | every flag submit + every comment | `/api/flags`, `/api/events/[id]/comments` |
+| **submission_audit** | Haiku 4.5 (+ hard rules) | every `/submit` BEFORE vision_extractor; rejects flagged LE domains, routes `.gov`/`.mil`/URL-shorteners to review, LLM-judges entrapment / astroturf / disinfo | `/api/submit` |
 
 Every run is logged to `agent_runs` with input/output summary + reasoning trace + duration. Visible at `/admin`.
 
@@ -132,15 +134,19 @@ Drop a 180-second voiceover MP3 at `remotion/public/voiceover.mp3` and uncomment
 
 ## How users trigger agents
 
-| Action on the site | Agent fires |
+| Action on the site | Agent(s) fire |
 |---|---|
-| Type any prompt in chat | `intent_parse` (always) → `vision_extractor` (if there are unprocessed `raw_posts` with images) → `dedup` → `recommender` |
-| Type "plan my Saturday" / "schedule" / "agenda" / "itinerary" / "build my day" | `intent_parse` → `scheduler` (instead of recommender) — uses the user's saved events |
-| Drop a flyer at `/submit` | `vision_extractor` |
+| Click **Pull fresh events** in chat sidebar | `harvester` (parallel, 6 sources at a time, 12s per-source timeout) |
+| Type any prompt in chat | `intent_parse` (always) → `vision_extractor` (if unprocessed `raw_posts` with images) → `dedup` → `recommender` |
+| Type "plan my Saturday" / "agenda" / "itinerary" / "build my day" | `intent_parse` → `scheduler` (over saved events) |
+| Click **Curate** in header | `curator` (reads prefs + saves + passes; returns card stack) |
+| Save / Pass / Maybe on a curate card | writes `event_saves` or `event_passes` (no agent — feedback for next curate) |
+| Click **Plan** in Schedule panel | `scheduler` |
+| Drop a flyer at `/submit` | `submission_audit` (Haiku) → `vision_extractor` (Opus, only if audit returns `process`) |
 | Click map / event "Add a flag" → submit | `safety_review` |
 | Post a comment on an event | `safety_review` |
-| Click **Run harvester** in admin (or POST `/api/harvest`) | `harvester` (Haiku triage on every fetched post) |
-| Click **Plan** in Schedule panel | `scheduler` (standalone path) |
+| Admin "Run harvester" | `harvester` |
+| Admin "Process queue" | `vision_extractor` on up to 6 pending raw_posts |
 
 ## What's deliberately missing
 
@@ -157,10 +163,15 @@ Drop a 180-second voiceover MP3 at `remotion/public/voiceover.mp3` and uncomment
 | Comments per event with Safety Review | ✓ shipped |
 | Sign-in required to flag / comment | ✓ shipped (Resend magic-link with auto-verify fallback) |
 | Cloudflare Turnstile bot check on submit | ✓ wired, just needs keys |
-| Manual harvest trigger | ✓ shipped (admin button + `/api/harvest`) |
+| Manual harvest trigger | ✓ shipped (chat sidebar button + admin button + `/api/harvest`) |
+| Parallel harvester with per-source timeout | ✓ shipped (6× concurrency, 12s timeout, marks polled even on failure) |
+| Submission audit (state-actor / entrapment) | ✓ shipped (Haiku + hard rules) |
+| Curator agent (pre-fill watchlist) | ✓ shipped (`/api/curate`, card-stack UI) |
+| Process-queue button (run vision on harvested posts) | ✓ shipped (admin only) |
 | Confirm-flag / "I see this too" button | ⚠ API exists at `/api/flags/[id]/confirm`; no UI yet |
 | Public "agents running right now" counter | not started |
 | Cron'd harvest every 30 min | not started — set `CRON_SECRET` and use [cron-job.org](https://cron-job.org) to hit `/api/harvest` with the header |
+| First-visit Curator auto-trigger after onboarding | not started |
 
 ## Open decisions
 

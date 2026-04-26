@@ -150,42 +150,70 @@ export interface HarvesterRunResult {
   eventCandidates: number;
 }
 
+const PER_SOURCE_TIMEOUT_MS = 12_000;
+const SOURCE_CONCURRENCY = 6;
+
 export async function runHarvester(input: HarvesterRunInput): Promise<HarvesterRunResult> {
   const startedAt = Date.now();
   const dueSources = await fetchSourcesDueForPolling(input.city);
 
   let totalPosts = 0;
   let eventCandidates = 0;
+  let timeouts = 0;
+  let errors = 0;
 
-  for (const source of dueSources) {
-    const adapter = adapters[source.ingest_method];
-    if (!adapter) continue;
+  // Parallel fetch with bounded concurrency + per-source timeout
+  for (let i = 0; i < dueSources.length; i += SOURCE_CONCURRENCY) {
+    const slice = dueSources.slice(i, i + SOURCE_CONCURRENCY);
+    const results = await Promise.allSettled(slice.map(async source => {
+      const adapter = adapters[source.ingest_method];
+      if (!adapter) return { posts: 0, candidates: 0 };
 
-    try {
-      const result = await adapter.fetch(source);
-      if (result.posts.length === 0) {
+      try {
+        const result = await withTimeout(adapter.fetch(source), PER_SOURCE_TIMEOUT_MS);
+        if (!result || result.posts.length === 0) {
+          await markPolled(source.id);
+          return { posts: 0, candidates: 0 };
+        }
+
+        const inserted = await persistRawPosts(result.posts);
+        let cand = 0;
+
+        // Classify in small parallel batches too
+        const CLASSIFY_CONCURRENCY = 4;
+        for (let j = 0; j < inserted.length; j += CLASSIFY_CONCURRENCY) {
+          const batch = inserted.slice(j, j + CLASSIFY_CONCURRENCY);
+          const classified = await Promise.all(batch.map(async post => {
+            const has = await classifyEventSignal({
+              text_content: post.text_content,
+              image_urls: post.image_urls,
+            });
+            await prisma.rawPost.update({
+              where: { id: post.id },
+              data: { has_event_signal: has },
+            });
+            return has;
+          }));
+          cand += classified.filter(Boolean).length;
+        }
+
         await markPolled(source.id);
-        continue;
+        return { posts: inserted.length, candidates: cand };
+      } catch (err) {
+        if ((err as Error).message === 'timeout') timeouts += 1;
+        else errors += 1;
+        console.error(`[harvester] ${source.ingest_method} ${source.display_name}:`, (err as Error).message);
+        // Mark polled anyway so we don't keep retrying a flaky feed every call
+        try { await markPolled(source.id); } catch {}
+        return { posts: 0, candidates: 0 };
       }
+    }));
 
-      const inserted = await persistRawPosts(result.posts);
-      totalPosts += inserted.length;
-
-      for (const post of inserted) {
-        const hasEventSignal = await classifyEventSignal({
-          text_content: post.text_content,
-          image_urls: post.image_urls,
-        });
-        if (hasEventSignal) eventCandidates += 1;
-        await prisma.rawPost.update({
-          where: { id: post.id },
-          data: { has_event_signal: hasEventSignal },
-        });
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        totalPosts += r.value.posts;
+        eventCandidates += r.value.candidates;
       }
-
-      await markPolled(source.id);
-    } catch (err) {
-      console.error(`[harvester] adapter ${source.ingest_method} failed for ${source.display_name}:`, err);
     }
   }
 
@@ -193,13 +221,21 @@ export async function runHarvester(input: HarvesterRunInput): Promise<HarvesterR
     sessionId: input.sessionId,
     agentName: 'harvester',
     inputSummary: `${dueSources.length} sources due`,
-    outputSummary: `${totalPosts} posts harvested, ${eventCandidates} event candidates`,
-    reasoningTrace: { sourcesPolled: dueSources.length, totalPosts, eventCandidates },
+    outputSummary: `${totalPosts} posts, ${eventCandidates} candidates · ${timeouts}t/${errors}e`,
+    reasoningTrace: { sourcesPolled: dueSources.length, totalPosts, eventCandidates, timeouts, errors },
     durationMs: Date.now() - startedAt,
     model: 'mixed',
   });
 
   return { totalPosts, eventCandidates };
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error('timeout')), ms);
+    p.then(v => { clearTimeout(id); resolve(v); })
+     .catch(e => { clearTimeout(id); reject(e); });
+  });
 }
 
 async function classifyEventSignal(post: { text_content?: string | null; image_urls: string[] }): Promise<boolean> {

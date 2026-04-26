@@ -47,6 +47,9 @@ export default function AdminPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [harvesting, setHarvesting] = useState(false);
   const [harvestResult, setHarvestResult] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [processResult, setProcessResult] = useState<string | null>(null);
+  const [queueDepth, setQueueDepth] = useState<number | null>(null);
 
   // Pull key from URL or localStorage on mount
   useEffect(() => {
@@ -63,9 +66,10 @@ export default function AdminPage() {
   const load = useCallback(async (k: string) => {
     setError(null);
     try {
-      const [sRes, rRes] = await Promise.all([
+      const [sRes, rRes, qRes] = await Promise.all([
         fetch(`/api/admin/stats?key=${encodeURIComponent(k)}`),
         fetch(`/api/admin/runs?key=${encodeURIComponent(k)}&limit=80${filterAgent ? `&agent=${filterAgent}` : ''}`),
+        fetch(`/api/process-queue?key=${encodeURIComponent(k)}`),
       ]);
       if (sRes.status === 403 || rRes.status === 403) {
         setError('Bad key (or ADMIN_KEY not set in env)');
@@ -79,6 +83,10 @@ export default function AdminPage() {
       const r = await rRes.json();
       setStats(s);
       setRuns(r.runs ?? []);
+      if (qRes.ok) {
+        const q = await qRes.json();
+        setQueueDepth(q.pending_with_images ?? 0);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -142,7 +150,7 @@ export default function AdminPage() {
                 });
                 const json = await res.json();
                 if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-                setHarvestResult(`Harvested ${json.totalPosts} posts, ${json.eventCandidates} event candidates in ${(json.duration_ms / 1000).toFixed(1)}s`);
+                setHarvestResult(`Harvested ${json.totalPosts} posts, ${json.eventCandidates} candidates in ${(json.duration_ms / 1000).toFixed(1)}s`);
                 void load(key);
               } catch (err) {
                 setHarvestResult(`Failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -156,6 +164,33 @@ export default function AdminPage() {
           >
             {harvesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Antenna className="w-3 h-3" />}
             {harvesting ? 'Harvesting...' : 'Run harvester'}
+          </button>
+          <button
+            onClick={async () => {
+              setProcessing(true);
+              setProcessResult(null);
+              try {
+                const res = await fetch(`/api/process-queue?key=${encodeURIComponent(key)}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ city: 'nyc', limit: 6 }),
+                });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+                setProcessResult(`Vision: processed ${json.processed}, created ${json.created_events} events, skipped ${json.skipped} in ${(json.duration_ms / 1000).toFixed(1)}s`);
+                void load(key);
+              } catch (err) {
+                setProcessResult(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setProcessing(false);
+              }
+            }}
+            disabled={processing || queueDepth === 0}
+            className="text-xs px-2 py-1 rounded border border-neutral-700 hover:bg-neutral-800 disabled:opacity-50 inline-flex items-center gap-1.5"
+            title={`Run vision extractor on up to 6 pending posts${queueDepth != null ? ` (${queueDepth} in queue)` : ''}`}
+          >
+            {processing ? <Loader2 className="w-3 h-3 animate-spin" /> : <span>👁</span>}
+            {processing ? 'Processing...' : `Process queue${queueDepth != null ? ` (${queueDepth})` : ''}`}
           </button>
           <button
             onClick={() => void load(key)}
@@ -181,6 +216,11 @@ export default function AdminPage() {
       {harvestResult && (
         <div className="mx-6 mt-4 px-3 py-2 rounded bg-blue-950/40 border border-blue-900 text-blue-200 text-sm">
           {harvestResult}
+        </div>
+      )}
+      {processResult && (
+        <div className="mx-6 mt-2 px-3 py-2 rounded bg-emerald-950/40 border border-emerald-900 text-emerald-200 text-sm">
+          {processResult}
         </div>
       )}
 
