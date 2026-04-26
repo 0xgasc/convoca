@@ -68,7 +68,7 @@ export default function Home() {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
-  const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
+  const [viewMode, setViewMode] = useState<'map' | 'list'>('list');
 
   // Bootstrap session
   useEffect(() => {
@@ -446,34 +446,15 @@ export default function Home() {
           />
 
           {viewMode === 'list' ? (
-            <div className="h-full flex flex-col bg-white">
-              {/* List header bar */}
-              <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-200 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-neutral-900">
-                    {filteredEvents.length}
-                    {!filtersAreEmpty(filters) && <span className="text-neutral-400 font-normal"> of {events.length}</span>}
-                    {' '}{language === 'es' ? 'eventos' : 'events'}
-                  </span>
-                  {session?.cause_prefs && session.cause_prefs.length > 0 && filtersAreEmpty(filters) && (
-                    <span className="text-[11px] text-violet-600 flex items-center gap-0.5">
-                      <Sparkles className="w-2.5 h-2.5" />
-                      {language === 'es' ? 'Personalizado' : 'Personalized'}
-                    </span>
-                  )}
-                </div>
-                <div className="text-[10px] bg-violet-600/90 text-white px-2 py-0.5 rounded font-medium tracking-wide flex items-center gap-1">
-                  <Sparkles className="w-2.5 h-2.5" />
-                  {language === 'es' ? 'Agente IA' : 'AI agent'}
-                </div>
-              </div>
-              <EventListView
-                events={filteredEvents}
-                language={language}
-                highlightedIds={highlightedIds}
-                onEventClick={handleEventClick}
-              />
-            </div>
+            <EventListView
+              events={filteredEvents}
+              language={language}
+              highlightedIds={highlightedIds}
+              onEventClick={handleEventClick}
+              totalCount={events.length}
+              onOpenFilters={() => setShowFilters(v => !v)}
+              hasActiveFilters={!filtersAreEmpty(filters)}
+            />
           ) : (
             <>
               <MapView
