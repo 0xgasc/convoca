@@ -171,13 +171,8 @@ export default function Home() {
   }, []);
 
   const handleMapClick = useCallback((lngLat: { lng: number; lat: number }) => {
-    if (!session?.verified) {
-      setSignInReason(language === 'es' ? 'Iniciá sesión para reportar avisos.' : 'Sign in to drop a community flag.');
-      setShowSignIn(true);
-      return;
-    }
     setFlagAt(lngLat);
-  }, [session, language]);
+  }, []);
 
   const requestSignIn = useCallback((reason?: string) => {
     setSignInReason(reason);
