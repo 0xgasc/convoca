@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flyer 2 — Know Your Rights / Tus Derechos</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1080px; height: 1080px;
+    background: #0a0a0a;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
+  .card {
+    width: 980px; height: 980px;
+    background: #f5f0e8;
+    border-radius: 4px;
+    padding: 52px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+  .top-bar {
+    background: #1a1a1a;
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 12px;
+  }
+  .left-accent {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 12px;
+    background: #cc2a2a;
+  }
+  .header {
+    margin-left: 24px;
+    margin-top: 12px;
+    margin-bottom: 32px;
+  }
+  .org-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #1a1a1a;
+    color: #f5f0e8;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    padding: 6px 16px;
+    border-radius: 2px;
+    margin-bottom: 20px;
+  }
+  .title-block {
+    border-left: 6px solid #cc2a2a;
+    padding-left: 20px;
+    margin-bottom: 6px;
+  }
+  .title-en {
+    font-size: 64px;
+    font-weight: 900;
+    color: #1a1a1a;
+    line-height: 1.0;
+    text-transform: uppercase;
+    letter-spacing: -2px;
+  }
+  .title-es {
+    font-size: 44px;
+    font-weight: 900;
+    color: #cc2a2a;
+    line-height: 1.0;
+    text-transform: uppercase;
+    letter-spacing: -1px;
+  }
+  .subtitle {
+    font-size: 18px;
+    color: #555;
+    font-style: italic;
+    margin-top: 10px;
+    margin-left: 26px;
+  }
+  .main-content {
+    flex: 1;
+    display: flex;
+    gap: 32px;
+    margin-left: 24px;
+    margin-bottom: 24px;
+  }
+  .info-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 24px;
+  }
+  .info-block {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .info-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #cc2a2a;
+  }
+  .info-value-en {
+    font-size: 24px;
+    font-weight: 800;
+    color: #1a1a1a;
+    line-height: 1.2;
+  }
+  .info-value-es {
+    font-size: 18px;
+    font-weight: 600;
+    color: #444;
+    line-height: 1.2;
+    font-style: italic;
+  }
+  .topics-column {
+    width: 300px;
+    background: #1a1a1a;
+    border-radius: 4px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .topics-title {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #cc2a2a;
+    margin-bottom: 4px;
+  }
+  .topic-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  .topic-item:last-child { border-bottom: none; }
+  .topic-num {
+    font-size: 28px;
+    font-weight: 900;
+    color: #cc2a2a;
+    line-height: 1;
+    flex-shrink: 0;
+    width: 32px;
+  }
+  .topic-text { flex: 1; }
+  .topic-en {
+    font-size: 14px;
+    font-weight: 700;
+    color: #f5f0e8;
+    line-height: 1.3;
+  }
+  .topic-es {
+    font-size: 12px;
+    color: #888;
+    font-style: italic;
+    margin-top: 2px;
+  }
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-left: 24px;
+    padding-top: 20px;
+    border-top: 2px solid #1a1a1a;
+  }
+  .footer-note {
+    font-size: 13px;
+    color: #666;
+    max-width: 480px;
+    line-height: 1.5;
+  }
+  .footer-note strong { color: #1a1a1a; }
+  .rsvp-block {
+    background: #cc2a2a;
+    color: white;
+    padding: 16px 24px;
+    border-radius: 4px;
+    text-align: center;
+  }
+  .rsvp-label {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    opacity: 0.8;
+  }
+  .rsvp-handle {
+    font-size: 18px;
+    font-weight: 900;
+    letter-spacing: 0px;
+  }
+  .rsvp-sub { font-size: 11px; opacity: 0.75; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="top-bar"></div>
+  <div class="left-accent"></div>
+
+  <div class="header">
+    <div class="org-tag">
+      <span>■</span>
+      Brooklyn Immigrant Defense Project
+    </div>
+    <div class="title-block">
+      <div class="title-en">Know Your<br>Rights</div>
+      <div class="title-es">Conoce Tus Derechos</div>
+    </div>
+    <div class="subtitle">Free community workshop — Taller comunitario gratuito</div>
+  </div>
+
+  <div class="main-content">
+    <div class="info-column">
+      <div class="info-block">
+        <div class="info-label">When / Cuándo</div>
+        <div class="info-value-en">Thursday, May 8, 2025<br>6:30 PM – 9:00 PM</div>
+        <div class="info-value-es">Jueves, 8 de mayo — 6:30 PM</div>
+      </div>
+      <div class="info-block">
+        <div class="info-label">Where / Dónde</div>
+        <div class="info-value-en">Red Hook Community Justice Center</div>
+        <div class="info-value-es">88 Visitation Place, Red Hook, Brooklyn</div>
+      </div>
+      <div class="info-block">
+        <div class="info-label">Who it's for / Para quién</div>
+        <div class="info-value-en">All immigrants welcome<br><span style="font-size:18px;color:#444;">Undocumented community especially</span></div>
+        <div class="info-value-es">Inmigrantes documentados e indocumentados</div>
+      </div>
+      <div class="info-block">
+        <div class="info-label">Language / Idioma</div>
+        <div class="info-value-en">🇺🇸 English  🇲🇽 Español</div>
+        <div class="info-value-es">Interpretación simultánea disponible</div>
+      </div>
+    </div>
+
+    <div class="topics-column">
+      <div class="topics-title">Topics / Temas</div>
+      <div class="topic-item">
+        <div class="topic-num">01</div>
+        <div class="topic-text">
+          <div class="topic-en">ICE encounters: your rights at the door</div>
+          <div class="topic-es">Encuentros con ICE: tus derechos</div>
+        </div>
+      </div>
+      <div class="topic-item">
+        <div class="topic-num">02</div>
+        <div class="topic-text">
+          <div class="topic-en">Deportation defense basics</div>
+          <div class="topic-es">Defensa contra deportación</div>
+        </div>
+      </div>
+      <div class="topic-item">
+        <div class="topic-num">03</div>
+        <div class="topic-text">
+          <div class="topic-en">Emergency family plans</div>
+          <div class="topic-es">Plan de emergencia familiar</div>
+        </div>
+      </div>
+      <div class="topic-item">
+        <div class="topic-num">04</div>
+        <div class="topic-text">
+          <div class="topic-en">Free legal referrals on-site</div>
+          <div class="topic-es">Referencias legales gratuitas</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-note">
+      <strong>No ID required. Completely confidential.</strong><br>
+      No se requiere identificación. Completamente confidencial.<br>
+      Childcare available upon request / Cuidado de niños disponible
+    </div>
+    <div class="rsvp-block">
+      <div class="rsvp-label">RSVP / Registro</div>
+      <div class="rsvp-handle">@BKImmigrantDef</div>
+      <div class="rsvp-sub">or bidp.org/events · o bidp.org/eventos</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

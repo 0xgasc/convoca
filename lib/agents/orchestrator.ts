@@ -158,9 +158,14 @@ export async function orchestrate(input: OrchestrateInput, emit: Emit): Promise<
   }
 
   emit({ type: 'status', agent: 'recommender', message: 'Ranking events for you...' });
+  let eventsForRanking = await fetchEventsForIntent(intent, input.city);
+  // Fallback: if strict filters return nothing, broaden to all upcoming city events
+  if (eventsForRanking.length === 0) {
+    eventsForRanking = await fetchEventsForIntent({ ...intent, cause_tags: [], event_types: [], date_range_start: null, date_range_end: null }, input.city);
+  }
   const ranked = await runRecommender({
     userPrefs: await fetchUserPrefs(input.sessionId),
-    events: await fetchEventsForIntent(intent, input.city),
+    events: eventsForRanking,
     sessionId: input.sessionId,
   });
 

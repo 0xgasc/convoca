@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flyer 1 — Sunset Park Food Distribution</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1080px; height: 1080px;
+    background: #1a1a2e;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Arial Black', 'Impact', sans-serif;
+  }
+  .card {
+    width: 980px; height: 980px;
+    background: linear-gradient(145deg, #16213e 0%, #0f3460 100%);
+    border: 4px solid #e94560;
+    border-radius: 16px;
+    padding: 48px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(233,69,96,0.25) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .org-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .org-dot {
+    width: 14px; height: 14px;
+    background: #e94560;
+    border-radius: 50%;
+  }
+  .org-name {
+    font-size: 18px;
+    color: #a8b2d8;
+    font-family: Arial, sans-serif;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .badge {
+    background: #e94560;
+    color: white;
+    font-size: 13px;
+    font-family: Arial, sans-serif;
+    font-weight: 700;
+    padding: 4px 14px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    display: inline-block;
+    margin-bottom: 20px;
+  }
+  .headline-es {
+    font-size: 72px;
+    color: #ffffff;
+    line-height: 1.0;
+    text-transform: uppercase;
+    letter-spacing: -1px;
+    margin-bottom: 8px;
+  }
+  .headline-en {
+    font-size: 36px;
+    color: #a8b2d8;
+    font-family: Arial, sans-serif;
+    font-weight: 400;
+    font-style: italic;
+    margin-bottom: 40px;
+  }
+  .details {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .detail-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .detail-icon {
+    font-size: 26px;
+    width: 36px;
+    text-align: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .detail-text {
+    font-family: Arial, sans-serif;
+  }
+  .detail-main {
+    font-size: 26px;
+    color: #ffffff;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .detail-sub {
+    font-size: 18px;
+    color: #a8b2d8;
+    margin-top: 3px;
+  }
+  .divider {
+    height: 2px;
+    background: linear-gradient(90deg, #e94560, transparent);
+    margin: 24px 0;
+  }
+  .bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .bring {
+    background: rgba(233,69,96,0.15);
+    border: 1px solid rgba(233,69,96,0.4);
+    border-radius: 12px;
+    padding: 16px 24px;
+    max-width: 380px;
+  }
+  .bring-title {
+    font-size: 14px;
+    color: #e94560;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-family: Arial, sans-serif;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .bring-items {
+    font-family: Arial, sans-serif;
+    font-size: 18px;
+    color: #ccd6f6;
+    line-height: 1.8;
+  }
+  .qr-placeholder {
+    width: 140px; height: 140px;
+    border: 3px solid #e94560;
+    border-radius: 8px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 8px;
+  }
+  .qr-grid {
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px;
+    width: 80px; height: 80px;
+  }
+  .qr-cell {
+    background: #e94560;
+    border-radius: 1px;
+  }
+  .qr-cell.white { background: transparent; }
+  .qr-label {
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+    color: #a8b2d8;
+    text-align: center;
+    line-height: 1.3;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div>
+    <div class="org-bar">
+      <div class="org-dot"></div>
+      <span class="org-name">Sunset Park Mutual Aid • Brooklyn</span>
+    </div>
+    <span class="badge">Distribución Gratuita / Free Distribution</span>
+    <div class="headline-es">Comida para<br>Nuestra<br>Comunidad</div>
+    <div class="headline-en">Free Food Distribution — Everyone Welcome</div>
+  </div>
+
+  <div class="details">
+    <div class="detail-row">
+      <div class="detail-icon">📅</div>
+      <div class="detail-text">
+        <div class="detail-main">Sábado, 3 de Mayo / Saturday, May 3rd</div>
+        <div class="detail-sub">10:00 AM – 2:00 PM (o hasta agotar existencias / or while supplies last)</div>
+      </div>
+    </div>
+    <div class="detail-row">
+      <div class="detail-icon">📍</div>
+      <div class="detail-text">
+        <div class="detail-main">Parque de la Calle 43 / 43rd Street Park</div>
+        <div class="detail-sub">4311 4th Ave, Sunset Park, Brooklyn, NY 11220</div>
+      </div>
+    </div>
+    <div class="detail-row">
+      <div class="detail-icon">🤝</div>
+      <div class="detail-text">
+        <div class="detail-main">Necesitamos Voluntarios</div>
+        <div class="detail-sub">Arrive by 9 AM to help set up • Se habla español</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="bottom">
+    <div class="bring">
+      <div class="bring-title">Trae / Bring</div>
+      <div class="bring-items">
+        🛍️ Bolsas reutilizables / reusable bags<br>
+        📋 No se requiere ID / No ID required<br>
+        👨‍👩‍👧 Toda la familia bienvenida / all ages
+      </div>
+    </div>
+    <div class="qr-placeholder">
+      <div class="qr-grid">
+        <div class="qr-cell"></div><div class="qr-cell"></div><div class="qr-cell white"></div><div class="qr-cell"></div><div class="qr-cell"></div><div class="qr-cell white"></div>
+        <div class="qr-cell"></div><div class="qr-cell white"></div><div class="qr-cell"></div><div class="qr-cell white"></div><div class="qr-cell"></div><div class="qr-cell"></div>
+        <div class="qr-cell white"></div><div class="qr-cell"></div><div class="qr-cell white"></div><div class="qr-cell"></div><div class="qr-cell white"></div><div class="qr-cell"></div>
+        <div class="qr-cell"></div><div class="qr-cell white"></div><div class="qr-cell"></div><div class="qr-cell white"></div><div class="qr-cell"></div><div class="qr-cell white"></div>
+        <div class="qr-cell"></div><div class="qr-cell"></div><div class="qr-cell white"></div><div class="qr-cell"></div><div class="qr-cell"></div><div class="qr-cell white"></div>
+        <div class="qr-cell white"></div><div class="qr-cell"></div><div class="qr-cell white"></div><div class="qr-cell"></div><div class="qr-cell white"></div><div class="qr-cell"></div>
+      </div>
+      <div class="qr-label">Más info / more info<br>@sunsetparkmutualaid</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
