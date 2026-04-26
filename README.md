@@ -1,90 +1,184 @@
 # Convoca
 
-> Open-source, agent-powered discovery layer for IRL events that build community — protests, town halls, mutual aid distributions, volunteer cleanups, free public programs. Launching in NYC and Guatemala City.
+**Civic and community life generates hundreds of organized events every weekend. Most people who care hear about 5% of them.** Convoca is an open-source, agent-powered discovery layer that pulls from every public source — RSS feeds, city APIs, Telegram channels, community-submitted flyers — and makes the full picture visible, searchable, and actionable in one place.
 
-**Status**: hackathon MVP, in active development. Not production-ready.
+Built with Claude Opus 4.7 for the Anthropic hackathon. Launching in NYC and Guatemala City.
 
-## What it is
+---
 
-Civic and community life generates enormous amounts of organized IRL activity, but the information about it is scattered across Instagram, Telegram, Eventbrite, Mobilize, neighborhood listservs, RSS feeds, government calendars, and physical flyers. People who care actively miss things they would have shown up for.
+## What it does
 
-Convoca uses Claude Opus 4.7 agents to do the cross-platform work: discovery, vision OCR on flyers, semantic deduplication across sources, ranked recommendations with visible reasoning. Plus a hyperlocal community safety overlay so attendees keep each other informed in real time.
+### 1. Vision on real-world bilingual flyers
+Drag a screenshot from Instagram, a photo of a church bulletin board, a WhatsApp-forwarded flyer. The vision agent reads it — title, date, location, organizer, action type, cause tags, language — and pins it on the map within seconds. Confidence score included. No manual data entry.
 
-## Three principles
+### 2. Cross-source semantic dedup with visible reasoning
+The same Saturday food distribution gets posted by five organizations: different platforms, different wording, different times listed. The dedup agent merges them into one canonical event and shows its work — which signals it weighted, why the datetime discrepancy didn't block the merge, what confidence it landed at. This judgment is only possible with a reasoning model, and you can watch it happen live.
 
-**Community-fed, agent-amplified.** We pull only from sources that publish openly (public APIs, RSS, ICS, Telegram public channels, city open data) or that community members hand us via `/submit`. We do not scrape Instagram, Facebook, or any logged-in platform.
+### 3. One-tap action + community submit loop
+From discovery to signup is one tap — deep-linked to the organizer's existing Mobilize or Action Network form, no Convoca account required. Attendees in the field flag what they see in real time (route changes, medical aid stations, ICE presence, supplies needed). Each flag goes through a safety review agent that blocks doxxing and spam but errs hard toward approval, because real-time ground truth matters.
 
-**Agents do labor, not surveillance.** No user profiling. No attendance lists. No social graphs. No persistent identity. The platform is session-based by design.
+---
 
-**The community is the source.** The most powerful ingest channel is one tap from a community member. Drag a flyer, paste a URL — the vision agent extracts structured data within seconds and adds it to the map.
+## Agent architecture
 
-Read the full ingestion philosophy in [`INGESTION.md`](./INGESTION.md).
-
-## What you can do with it
-
-- Search civic and community events across a city in natural language ("find housing actions this weekend", "encuentra eventos de vivienda este finde")
-- See events on a hyperlocal map with reasoning traces explaining each recommendation
-- One-tap signup via deep-links to the organizer's existing form (Mobilize, Action Network, etc.)
-- Drop community safety flags in real time (police presence, ICE presence, route changes, medical aid stations, supplies needed)
-- Submit flyers from any source — the vision agent processes them in seconds
-
-## What it doesn't do
-
-- Aggregate ticketed concerts, paid classes, or commercial entertainment
-- Build user profiles or attendance data
-- Scrape Instagram or Facebook
-- Replace the human-curated aggregators it admires (mutualaid.nyc, actions.nyc, protest.one, The Skint, The Indypendent, BetaNYC)
-
-## Tech stack
-
-- Next.js 14 + TypeScript + Tailwind + shadcn/ui
-- Supabase (Postgres + pgvector + storage)
-- Mapbox GL JS
-- Anthropic SDK (Opus 4.7 + Haiku 4.5)
-- Voyage AI embeddings for dedup shortlist
-
-## Quick start
-
-```bash
-git clone https://github.com/yourname/convoca && cd convoca
-cp .env.example .env  # fill in keys
-npm install
-# In Supabase SQL editor, paste and run schema.sql
-npm run seed:sources  # loads NYC + Guate sources
-npm run dev
+```
+                 ┌────────────────┐
+ user prompt ──▶ │  Orchestrator  │ ──▶ SSE stream → UI trace panel
+                 └────────┬───────┘
+                          │
+ ┌──────────┬──────────┬──┴──────┬──────────┬─────────────┬──────────────┐
+ ▼          ▼          ▼         ▼          ▼             ▼              ▼
+Intent   Discovery  Harvester  Vision    Dedup       Recommender    Safety
+Parse     (Opus)    (Haiku)    (Opus)   (Opus)        (Opus)        Review
+(Opus)                                                               (Opus)
 ```
 
-See [`INSTALL.md`](./INSTALL.md) for full setup instructions.
+| Agent | Model | What it does |
+|---|---|---|
+| **Intent Parse** | Opus 4.7 | Turns free-text prompts into structured filters (city, cause, date range, action preference, language) |
+| **Discovery** | Opus 4.7 | Snowballs new civic-relevant sources from seed URLs — finds the Telegram channel from the org's Linktree |
+| **Harvester** | Haiku 4.5 | Triage classifier; typed adapters for RSS, ICS, Mobilize API, Action Network, NYC Open Data, Legistar, public Telegram, and community submissions |
+| **Vision Extractor** | Opus 4.7 | Structures bilingual flyers and screenshots into typed `events` rows with confidence scores |
+| **Dedup** | Opus 4.7 | Voyage AI embedding shortlist → semantic merge with full reasoning trace surfaced in UI |
+| **Recommender** | Opus 4.7 | Ranks events for a session's cause/action/neighborhood prefs with one-sentence reasoning per result |
+| **Safety Review** | Opus 4.7 | Reviews community-submitted flags before publishing — blocks doxxing/spam, approves ground-truth reports |
 
-## Architecture
+All seven prompts live in `lib/agents/prompts.ts`. Reasoning traces are first-class UI, not debug output.
 
-Seven agents under one orchestrator that streams its work via SSE to a live trace UI:
+---
 
-- **Intent Parse** — turns free-text user prompts into structured filters
-- **Discovery** — snowballs new civic-relevant sources from seeds
-- **Harvester** — typed adapters for each source kind (RSS, ICS, Mobilize, NYC Open Data, Legistar, public Telegram, community submissions)
-- **Vision Extractor** — OCRs and structures bilingual flyers
-- **Dedup** — cross-source semantic merge with visible reasoning trace
-- **Recommender** — ranks events for users with one-sentence reasoning per item
-- **Safety Review** — filters community safety flag submissions before they go public
+## Stack
 
-All seven prompts live in a single file (`lib/agents/prompts.ts`) — intentionally centralized for fast iteration.
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 14 + TypeScript + Tailwind + shadcn/ui |
+| Map | Mapbox GL JS |
+| Database | Postgres + pgvector (Railway) + Prisma |
+| Agents | Anthropic SDK — Opus 4.7 + Haiku 4.5 |
+| Embeddings | Voyage AI (`voyage-3`) for dedup shortlist |
+| Streaming | SSE from Next.js route handlers |
+| Email | Resend |
+| Deploy | Vercel + Railway |
 
-## Project status & contributing
+---
 
-This is hackathon-stage. Lots of seams exposed. Issues and PRs welcome on:
+## Getting started
 
-- Adding source adapters for your city
-- Translating the interface
-- Improving agent prompts (please include before/after examples)
-- Reporting flyers the vision extractor handles badly (with the flyer attached)
+### 1. Clone and install
 
-Roadmap items include push notifications, organizer-side dashboards, organizer verification, federation between city instances, and a more detailed published threat model.
+```bash
+git clone https://github.com/0xgasc/convoca
+cd convoca
+npm install
+```
+
+### 2. Environment variables
+
+Copy `.env.example` to `.env.local` and fill in:
+
+```bash
+# Anthropic
+ANTHROPIC_API_KEY=
+
+# Database (Railway Postgres or any Postgres)
+DATABASE_URL=
+
+# Mapbox
+NEXT_PUBLIC_MAPBOX_TOKEN=
+
+# Voyage AI (embeddings for dedup)
+VOYAGE_API_KEY=
+
+# Resend (email notifications)
+RESEND_API_KEY=
+
+# App
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+### 3. Database setup
+
+Run the schema against your Postgres instance:
+
+```bash
+# Apply schema + seed cities
+psql $DATABASE_URL < schema.sql
+```
+
+Or paste `schema.sql` into your Railway/Supabase SQL editor and run it.
+
+### 4. Seed data
+
+```bash
+# Load ~80 NYC sources (borough-by-borough) + Guatemala City sources
+npm run seed:sources
+
+# Seed demo events for local dev
+npm run seed:demo
+
+# Optional: seed a test user session
+npm run seed:test-user
+```
+
+### 5. Run
+
+```bash
+npm run dev
+# → http://localhost:3000
+```
+
+### Test the vision extractor
+
+```bash
+npm run test:vision
+# runs against fixtures in scripts/fixtures/
+```
+
+---
+
+## Features
+
+| Feature | Status |
+|---|---|
+| **Event list** — default view, inline search + date pills + sort + filter | ✅ Live |
+| **Map view** — Mapbox pins with flag overlays, borough filter | ✅ Live |
+| **Agent chat** — SSE-streaming 7-agent orchestration | ✅ Live |
+| **Submit a flyer** — drag-and-drop or camera, HEIC/iPhone support, Arweave storage | ✅ Live |
+| **Community flags** — ICE presence, route change, medical aid, etc. with safety review | ✅ Live |
+| **Email notifications** — 24h reminders, weekly digest, election alerts (Resend) | ✅ Live |
+| **Bilingual** — English + Spanish throughout, including agent prompts | ✅ Live |
+| **Admin panel** — harvest triggers, agent stats, geocode repair | ✅ Live |
+
+---
+
+## What Convoca ingests (and what it won't)
+
+**In scope** — IRL events that build community: protests, town halls, mutual aid distributions, volunteer cleanups, free public programs, skill-shares, community markets, block parties.
+
+**Out of scope** — ticketed concerts, paid classes, commercial pop-ups, anything where the frame is consumption rather than participation.
+
+**We never scrape** Instagram, Facebook, or any logged-in platform. The path for IG-only content is `/submit` — a community member shares the URL or screenshot, and the vision agent handles it from there.
+
+Full ingestion philosophy: [`INGESTION.md`](./INGESTION.md).
+
+---
+
+## Contributing
+
+This is hackathon-stage, built in 48 hours. Seams are showing. Pull requests are welcome for:
+
+- **Source adapters** — add your city's open data feeds, org calendars, public Telegram channels
+- **Prompt improvements** — vision extractor and dedup agent especially; please include before/after flyer examples
+- **Translations** — UI is en/es to start; the architecture supports any language
+- **New cities** — one `cities` row + a set of `sources` rows is all it takes; open an issue to coordinate
+- **Bug reports** — flyers the vision extractor gets wrong (attach the flyer)
+
+Issues and discussions are open. This project exists because human-curated civic aggregators prove the demand but can't scale alone. The goal is to build infrastructure that amplifies that work, not replaces it.
+
+Shoutout to the people running mutualaid.nyc, actions.nyc, protest.one, handsoffnyc, theskint, The Indypendent, nyc-noise, and BetaNYC — years of volunteer labor that makes this possible.
+
+---
 
 ## License
 
-MIT (with AGPL on the safety/community-flagging modules under consideration).
-
-## Acknowledgments
-
-Convoca is built on top of years of volunteer labor by the people who run the existing civic-information infrastructure. Particular gratitude to mutualaid.nyc, actions.nyc, protest.one, handsoffnyc, theskint, The Indypendent, nyc-noise, BetaNYC, and the dozens of borough-level mutual aid networks that prove every day that this work matters and is possible.
+MIT. AGPL under consideration for the safety/community-flagging modules specifically.
