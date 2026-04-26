@@ -220,7 +220,7 @@ export function EventListView({ events, language, highlightedIds, onEventClick, 
           </div>
 
           {onOpenFilters && (
-            <button onClick={onOpenFilters} className={filterBtnClasses}>
+            <button onClick={onOpenFilters} className={`hidden md:inline-flex ${filterBtnClasses}`}>
               <SlidersHorizontal className="w-3.5 h-3.5" />
               {lang === 'es' ? 'Filtros' : 'Filter'}
               {hasActiveFilters && (

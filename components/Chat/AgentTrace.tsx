@@ -1,18 +1,27 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Link2, Star, AlertTriangle, Calendar, Loader2 } from 'lucide-react';
+import { Link2, Star, AlertTriangle, Calendar, Loader2, ArrowRight } from 'lucide-react';
 import type { AgentEvent } from '@/lib/agents/orchestrator';
 import type { ScheduleResult } from '@/lib/agents/scheduler';
+
+interface EventSummary {
+  id: string;
+  title: string;
+  location_text: string | null;
+  datetime_iso: string | null;
+}
 
 interface AgentTraceProps {
   prompt: string | null;
   sessionId: string;
   city: 'nyc' | 'guatemala_city';
   onComplete?: (eventIds: string[]) => void;
+  events?: EventSummary[];
+  onEventClick?: (id: string) => void;
 }
 
-export function AgentTrace({ prompt, sessionId, city, onComplete }: AgentTraceProps) {
+export function AgentTrace({ prompt, sessionId, city, onComplete, events, onEventClick }: AgentTraceProps) {
   const [running, setRunning] = useState(false);
   const [traces, setTraces] = useState<TraceEntry[]>([]);
   const traceContainerRef = useRef<HTMLDivElement>(null);
@@ -89,7 +98,7 @@ export function AgentTrace({ prompt, sessionId, city, onComplete }: AgentTracePr
       case 'final_result':
         onComplete?.(event.eventIds);
         if (event.eventIds.length > 0) {
-          setTraces(prev => [...prev, { kind: 'done', count: event.eventIds.length, time: Date.now() }]);
+          setTraces(prev => [...prev, { kind: 'done', count: event.eventIds.length, eventIds: event.eventIds, time: Date.now() }]);
         }
         break;
       case 'error':
@@ -116,7 +125,7 @@ export function AgentTrace({ prompt, sessionId, city, onComplete }: AgentTracePr
           <span>Searching…</span>
         </div>
       )}
-      {traces.map((t, i) => <TraceItem key={i} trace={t} />)}
+      {traces.map((t, i) => <TraceItem key={i} trace={t} events={events} onEventClick={onEventClick} />)}
     </div>
   );
 }
@@ -127,7 +136,7 @@ type TraceEntry =
   | { kind: 'merged'; title: string; mergedFromCount: number; steps: string[]; time: number }
   | { kind: 'recommendation'; eventId: string; reasoning: string; time: number }
   | { kind: 'scheduled'; schedule: ScheduleResult; time: number }
-  | { kind: 'done'; count: number; time: number }
+  | { kind: 'done'; count: number; eventIds: string[]; time: number }
   | { kind: 'error'; message: string; time: number };
 
 function humanizeReasoning(raw: string): string {
@@ -139,7 +148,7 @@ function humanizeReasoning(raw: string): string {
     .trim();
 }
 
-function TraceItem({ trace }: { trace: TraceEntry }) {
+function TraceItem({ trace, events, onEventClick }: { trace: TraceEntry; events?: EventSummary[]; onEventClick?: (id: string) => void }) {
   switch (trace.kind) {
     case 'intent': {
       const clean = humanizeReasoning(trace.reasoning);
@@ -172,13 +181,27 @@ function TraceItem({ trace }: { trace: TraceEntry }) {
           <div className="text-sm font-medium text-neutral-900">{trace.title}</div>
         </div>
       );
-    case 'recommendation':
+    case 'recommendation': {
+      const ev = events?.find(e => e.id === trace.eventId);
       return (
-        <div className="flex gap-2 pl-2 border-l-2 border-amber-200">
-          <Star className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
-          <p className="text-sm text-neutral-700 leading-snug">{trace.reasoning}</p>
-        </div>
+        <button
+          onClick={() => ev && onEventClick?.(ev.id)}
+          disabled={!ev || !onEventClick}
+          className={`w-full text-left flex gap-2 pl-2 border-l-2 border-amber-200 rounded-r ${ev && onEventClick ? 'hover:bg-amber-50 cursor-pointer' : ''}`}
+        >
+          <Star className="w-3.5 h-3.5 text-amber-500 mt-1 shrink-0" />
+          <div className="min-w-0">
+            {ev && <p className="text-sm font-medium text-neutral-900 leading-snug truncate">{ev.title}</p>}
+            <p className="text-sm text-neutral-600 leading-snug">{trace.reasoning}</p>
+            {ev && onEventClick && (
+              <span className="text-xs text-amber-700 font-medium inline-flex items-center gap-0.5 mt-0.5">
+                View event <ArrowRight className="w-3 h-3" />
+              </span>
+            )}
+          </div>
+        </button>
       );
+    }
     case 'scheduled':
       return (
         <div className="bg-amber-50 rounded-lg px-3 py-2 border border-amber-200">
@@ -204,14 +227,30 @@ function TraceItem({ trace }: { trace: TraceEntry }) {
           )}
         </div>
       );
-    case 'done':
+    case 'done': {
+      const matched = events?.filter(e => trace.eventIds.includes(e.id)) ?? [];
       return (
-        <div className="text-sm text-neutral-500 pt-1">
-          {trace.count === 1
-            ? '1 event highlighted on the map'
-            : `${trace.count} events highlighted on the map`}
+        <div className="pt-1 space-y-1.5">
+          <p className="text-xs text-neutral-400">
+            {trace.count === 1 ? '1 result' : `${trace.count} results`}
+            {' · tap to open'}
+          </p>
+          {matched.slice(0, 5).map(ev => (
+            <button
+              key={ev.id}
+              onClick={() => onEventClick?.(ev.id)}
+              className="w-full text-left flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 transition-colors group"
+            >
+              <span className="text-sm font-medium text-neutral-900 truncate">{ev.title}</span>
+              <ArrowRight className="w-3.5 h-3.5 text-neutral-400 group-hover:text-neutral-700 shrink-0" />
+            </button>
+          ))}
+          {matched.length === 0 && trace.count > 0 && (
+            <p className="text-xs text-neutral-400">Switch to list view to see all results</p>
+          )}
         </div>
       );
+    }
     case 'error':
       return (
         <div className="text-red-700 text-sm bg-red-50 rounded-lg px-3 py-2 flex items-center gap-1.5">

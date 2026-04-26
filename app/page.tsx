@@ -167,6 +167,13 @@ export default function Home() {
     window.history.replaceState({}, '', u.toString());
   }, []);
 
+  const handleEventClickById = useCallback((id: string) => {
+    setOpenEventId(id);
+    const u = new URL(window.location.href);
+    u.searchParams.set('event', id);
+    window.history.replaceState({}, '', u.toString());
+  }, []);
+
   const closeEventModal = useCallback(() => {
     setOpenEventId(null);
     const u = new URL(window.location.href);
@@ -502,7 +509,7 @@ export default function Home() {
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
                 {sessionId && (
-                  <AgentTrace prompt={prompt} sessionId={sessionId} city={city} onComplete={handleComplete} />
+                  <AgentTrace prompt={prompt} sessionId={sessionId} city={city} onComplete={handleComplete} events={events} onEventClick={handleEventClickById} />
                 )}
               </div>
               <ChatInput
