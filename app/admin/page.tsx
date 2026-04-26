@@ -94,6 +94,8 @@ export default function AdminPage() {
   const [editPrompt, setEditPrompt] = useState('');
   const [savingPrompt, setSavingPrompt] = useState(false);
   const [showActions, setShowActions] = useState(false);
+  const [triggeringAgent, setTriggeringAgent] = useState<string | null>(null);
+  const [triggerResults, setTriggerResults] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -172,6 +174,21 @@ export default function AdminPage() {
     if (!latest) return 'idle';
     const ms = Date.now() - new Date(latest).getTime();
     return ms < 3_600_000 ? 'healthy' : 'stale';
+  };
+
+  const triggerAgent = async (name: string) => {
+    setTriggeringAgent(name);
+    setTriggerResults(prev => ({ ...prev, [name]: '' }));
+    try {
+      const res = await fetch(`/api/admin/trigger-agent?agent=${name}&key=${encodeURIComponent(key)}`, { method: 'POST' });
+      const json = await res.json() as { ok?: boolean; result?: string; error?: string };
+      setTriggerResults(prev => ({ ...prev, [name]: json.result ?? json.error ?? 'done' }));
+      void load(key);
+    } catch (err) {
+      setTriggerResults(prev => ({ ...prev, [name]: `Error: ${err instanceof Error ? err.message : String(err)}` }));
+    } finally {
+      setTriggeringAgent(null);
+    }
   };
 
   return (
@@ -345,18 +362,36 @@ export default function AdminPage() {
                     const count = stats.agents.runs_by_agent_7d[name] ?? 0;
                     const ms = stats.agents.avg_latency_ms_7d[name] ?? 0;
                     const status = agentStatus(name);
+                    const isTriggering = triggeringAgent === name;
+                    const triggerResult = triggerResults[name];
                     return (
-                      <button
+                      <div
                         key={name}
-                        onClick={() => { setFilterAgent(filterAgent === name ? '' : name); setActiveTab('runs'); }}
-                        className={`flex items-center gap-2 rounded border px-3 py-2 text-left hover:bg-neutral-900 transition-colors text-xs ${filterAgent === name ? 'border-white bg-neutral-900' : 'border-neutral-800'}`}
+                        className={`flex flex-col gap-1.5 rounded border px-3 py-2 text-xs transition-colors ${filterAgent === name ? 'border-white bg-neutral-900' : 'border-neutral-800'}`}
                       >
-                        <StatusDot status={status} />
-                        <Icon className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                        <span className="text-neutral-200">{name}</span>
-                        <span className="text-neutral-500">{count} runs</span>
-                        {ms > 0 && <span className="text-neutral-600">{(ms / 1000).toFixed(1)}s</span>}
-                      </button>
+                        <button
+                          onClick={() => { setFilterAgent(filterAgent === name ? '' : name); setActiveTab('runs'); }}
+                          className="flex items-center gap-2 text-left hover:opacity-80"
+                        >
+                          <StatusDot status={status} />
+                          <Icon className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                          <span className="text-neutral-200">{name}</span>
+                          <span className="text-neutral-500">{count} runs</span>
+                          {ms > 0 && <span className="text-neutral-600">{(ms / 1000).toFixed(1)}s</span>}
+                        </button>
+                        <button
+                          onClick={() => triggerAgent(name)}
+                          disabled={isTriggering}
+                          className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {isTriggering
+                            ? <><Loader2 className="w-3 h-3 animate-spin" /> running…</>
+                            : <><Zap className="w-3 h-3" /> Run</>}
+                        </button>
+                        {triggerResult && (
+                          <span className="text-[10px] text-neutral-400 max-w-[160px] truncate" title={triggerResult}>{triggerResult}</span>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
