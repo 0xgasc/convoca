@@ -27,7 +27,7 @@ export function ChatInput({ onSubmit, disabled, placeholder }: ChatInputProps) {
         onChange={e => setValue(e.target.value)}
         disabled={disabled}
         placeholder={placeholder ?? 'Ask: "housing actions this weekend"'}
-        className="flex-1 px-3 py-2 text-sm rounded border border-neutral-300 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-neutral-50"
+        className="flex-1 px-3 py-2 text-sm rounded border border-neutral-300 text-neutral-900 placeholder:text-neutral-400 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-neutral-50"
       />
       <button
         type="submit"

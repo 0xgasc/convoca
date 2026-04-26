@@ -273,7 +273,7 @@ export function DropZone({ sessionId, city, onSubmitted, language = 'en' }: Drop
           value={url}
           onChange={e => setUrl(e.target.value)}
           placeholder={t.pasteUrl}
-          className="w-full px-3 py-2 text-sm rounded border border-neutral-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="w-full px-3 py-2 text-sm rounded border border-neutral-300 text-neutral-900 placeholder:text-neutral-400 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
         <textarea
           value={text}

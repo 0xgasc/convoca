@@ -23,6 +23,7 @@ export async function GET(req: Request) {
     pendingSubmissions,
     recentEvents,
     flagsByStatus,
+    latestRunPerAgent,
   ] = await Promise.all([
     prisma.event.groupBy({ by: ['city_slug'], _count: { _all: true } }),
     prisma.source.count(),
@@ -44,6 +45,7 @@ export async function GET(req: Request) {
     prisma.submission.count({ where: { status: { in: ['pending', 'processing'] } } }),
     prisma.event.count({ where: { created_at: { gte: since24h } } }),
     prisma.eventFlag.groupBy({ by: ['status'], _count: { _all: true } }),
+    prisma.agentRun.groupBy({ by: ['agent_name'], _max: { created_at: true } }),
   ]);
 
   return Response.json({
@@ -67,6 +69,9 @@ export async function GET(req: Request) {
       runs_last_24h: runs24h,
       runs_by_agent_7d: Object.fromEntries(runsByAgent.map(r => [r.agent_name, r._count._all])),
       avg_latency_ms_7d: Object.fromEntries(avgLatencyByAgent.map(r => [r.agent_name, Math.round(r._avg.duration_ms ?? 0)])),
+      latest_run_at: Object.fromEntries(
+        latestRunPerAgent.filter(r => r._max.created_at).map(r => [r.agent_name, r._max.created_at!.toISOString()])
+      ),
     },
   });
 }

@@ -88,6 +88,8 @@ model Event {
   location_specificity   String?
   lat                    Decimal?                     @db.Decimal(9, 6)
   lng                    Decimal?                     @db.Decimal(9, 6)
+  borough                String?
+  neighborhood           String?
   organizer              String?
   cause_tags             String[]                     @default([])
   language               String                       @default("en")
@@ -188,6 +190,9 @@ model UserSession {
   verified_at                 DateTime? @db.Timestamptz(6)
   email_verification_token    String?   @unique
   email_verification_expires  DateTime? @db.Timestamptz(6)
+  notify_reminders            Boolean   @default(true)
+  notify_digest               Boolean   @default(true)
+  last_digest_sent_at         DateTime? @db.Timestamptz(6)
   created_at                  DateTime  @default(now()) @db.Timestamptz(6)
 
   city     City?          @relation(fields: [city_slug], references: [slug])

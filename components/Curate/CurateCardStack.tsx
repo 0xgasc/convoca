@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   X, Sparkles, BookmarkPlus, Clock, ThumbsDown, Loader2, MapPin, Calendar, Users,
-  ExternalLink, RefreshCw,
+  ExternalLink, RefreshCw, ChevronRight,
 } from 'lucide-react';
 import { getEventIcon } from '@/lib/icons';
-import { EVENT_TYPE_DISPLAY } from '@/lib/constants';
+import { EVENT_TYPE_DISPLAY, CAUSE_DISPLAY, NYC_BOROUGHS } from '@/lib/constants';
 import type { CitySlug, CanonicalEvent } from '@/lib/types';
 
 interface CuratedItem {
@@ -16,10 +16,19 @@ interface CuratedItem {
   event: CanonicalEvent;
 }
 
+// Top causes to show in the quick picker (most common civic causes)
+const QUICK_CAUSES = [
+  'housing', 'immigration', 'labor', 'mutual_aid', 'climate',
+  'racial_justice', 'lgbtq_rights', 'education', 'healthcare',
+  'police_accountability', 'food_security', 'arts_culture',
+];
+
 interface CurateCardStackProps {
   sessionId: string;
   city: CitySlug;
   language?: 'en' | 'es';
+  initialCauses?: string[];
+  initialBorough?: string;
   onClose: () => void;
   onSaved?: (eventId: string) => void;
   onOpenEvent?: (eventId: string) => void;
@@ -52,23 +61,27 @@ const COPY = {
   },
 };
 
-export function CurateCardStack({ sessionId, city, language = 'en', onClose, onSaved, onOpenEvent }: CurateCardStackProps) {
+export function CurateCardStack({ sessionId, city, language = 'en', initialCauses = [], initialBorough, onClose, onSaved, onOpenEvent }: CurateCardStackProps) {
   const t = COPY[language];
   const [items, setItems] = useState<CuratedItem[]>([]);
   const [skipped, setSkipped] = useState<string>('');
   const [idx, setIdx] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Preference picker state — shown first if no causes known
+  const [pickedCauses, setPickedCauses] = useState<string[]>(initialCauses);
+  const [pickedBorough, setPickedBorough] = useState<string>(initialBorough ?? '');
+  const [prefsDone, setPrefsDone] = useState(initialCauses.length > 0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (causes: string[], borough: string) => {
     setLoading(true);
     setError(null);
     try {
       const res = await fetch('/api/curate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, city, language, maxResults: 12 }),
+        body: JSON.stringify({ sessionId, city, language, maxResults: 12, cause_prefs: causes, borough: borough || undefined }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
@@ -82,7 +95,10 @@ export function CurateCardStack({ sessionId, city, language = 'en', onClose, onS
     }
   }, [sessionId, city, language]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (prefsDone) void load(pickedCauses, pickedBorough);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefsDone]);
 
   const current = items[idx];
 
@@ -133,7 +149,7 @@ export function CurateCardStack({ sessionId, city, language = 'en', onClose, onS
           </div>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => void load()}
+              onClick={() => void load(pickedCauses, pickedBorough)}
               disabled={loading}
               className="text-xs text-neutral-500 hover:text-neutral-900 inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-neutral-100"
               title={t.rerun}
@@ -146,7 +162,66 @@ export function CurateCardStack({ sessionId, city, language = 'en', onClose, onS
           </div>
         </div>
 
-        <p className="px-4 pt-3 text-xs text-neutral-500">{t.blurb}</p>
+        {/* ── Preference picker (shown before first run) ── */}
+        {!prefsDone && (
+          <div className="px-4 pt-4 pb-2 space-y-4">
+            <p className="text-sm text-neutral-600">
+              {language === 'es' ? '¿Qué te importa? Elegí algunas causas y el agente filtra para vos.' : 'What do you care about? Pick a few causes and the agent filters for you.'}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {QUICK_CAUSES.map(c => {
+                const meta = CAUSE_DISPLAY[c];
+                const label = meta ? (language === 'es' ? meta.label_es : meta.label_en) : c;
+                const active = pickedCauses.includes(c);
+                return (
+                  <button
+                    key={c}
+                    onClick={() => setPickedCauses(prev => active ? prev.filter(x => x !== c) : [...prev, c])}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${active ? 'bg-neutral-900 text-white border-neutral-900' : 'border-neutral-300 text-neutral-700 hover:border-neutral-500'}`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            {city === 'nyc' && (
+              <div>
+                <div className="text-xs text-neutral-500 mb-1.5">{language === 'es' ? 'Barrio (opcional)' : 'Borough (optional)'}</div>
+                <div className="flex flex-wrap gap-2">
+                  {NYC_BOROUGHS.map(b => (
+                    <button
+                      key={b.slug}
+                      onClick={() => setPickedBorough(prev => prev === b.slug ? '' : b.slug)}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${pickedBorough === b.slug ? 'bg-neutral-900 text-white border-neutral-900' : 'border-neutral-300 text-neutral-700 hover:border-neutral-500'}`}
+                    >
+                      {b.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <button
+              onClick={() => setPrefsDone(true)}
+              disabled={pickedCauses.length === 0}
+              className="w-full py-2.5 rounded-full bg-neutral-900 text-white text-sm font-medium disabled:opacity-40 inline-flex items-center justify-center gap-1.5 hover:bg-neutral-800"
+            >
+              <Sparkles className="w-4 h-4" />
+              {language === 'es' ? 'Curar para mí' : 'Curate for me'}
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {prefsDone && pickedCauses.length > 0 && (
+          <div className="px-4 pt-2 flex flex-wrap gap-1.5 items-center">
+            {pickedCauses.map(c => {
+              const meta = CAUSE_DISPLAY[c];
+              return <span key={c} className="text-[11px] px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600">{meta ? (language === 'es' ? meta.label_es : meta.label_en) : c}</span>;
+            })}
+            {pickedBorough && <span className="text-[11px] px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600">{NYC_BOROUGHS.find(b => b.slug === pickedBorough)?.name}</span>}
+            <button onClick={() => { setPrefsDone(false); setItems([]); }} className="text-[11px] text-neutral-400 hover:text-neutral-700 ml-1">edit</button>
+          </div>
+        )}
 
         {loading && (
           <div className="p-12 flex items-center justify-center text-neutral-500 gap-2">
@@ -212,7 +287,7 @@ export function CurateCardStack({ sessionId, city, language = 'en', onClose, onS
               </div>
             )}
             <button
-              onClick={() => void load()}
+              onClick={() => void load(pickedCauses, pickedBorough)}
               className="w-full py-2 text-sm font-medium rounded border border-neutral-300 bg-white hover:bg-neutral-50"
             >
               {t.rerun}

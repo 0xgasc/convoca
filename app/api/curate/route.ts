@@ -14,6 +14,8 @@ interface Body {
   city: CitySlug;
   language?: 'en' | 'es';
   maxResults?: number;
+  cause_prefs?: string[];
+  borough?: string;
 }
 
 export async function POST(req: Request) {
@@ -65,12 +67,18 @@ export async function POST(req: Request) {
   ]);
   const fresh = candidates.filter(c => !seen.has(c.id));
 
+  // Merge request-time prefs (from picker) with stored session prefs
+  const effectiveCauses = body.cause_prefs?.length
+    ? body.cause_prefs
+    : (session?.cause_prefs ?? []);
+  const effectiveNeighborhood = body.borough ?? session?.neighborhood ?? null;
+
   const result = await runCurator({
     language: body.language ?? (session?.language as 'en' | 'es' | undefined) ?? 'en',
     userPrefs: {
-      cause_prefs: session?.cause_prefs ?? [],
+      cause_prefs: effectiveCauses,
       action_prefs: session?.action_prefs ?? ['attend'],
-      neighborhood: session?.neighborhood ?? null,
+      neighborhood: effectiveNeighborhood,
       language: (session?.language ?? 'en') as 'en' | 'es',
     },
     savedTitles: saves.map(s => s.event.title),

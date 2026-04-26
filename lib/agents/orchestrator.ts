@@ -9,6 +9,7 @@ import { runVisionExtractor } from './visionExtractor';
 import { runDedup } from './dedup';
 import { runRecommender } from './recommender';
 import { runScheduler, type ScheduleResult } from './scheduler';
+import { logAgentRun } from './traces';
 import { prisma } from '@/lib/db';
 import type { ParsedIntent, ExtractedEvent, CanonicalEvent } from '@/lib/types';
 
@@ -61,6 +62,7 @@ export interface OrchestrateInput {
 type Emit = (event: AgentEvent) => void;
 
 export async function orchestrate(input: OrchestrateInput, emit: Emit): Promise<void> {
+  const startedAt = Date.now();
   const opts = {
     skipDiscovery: input.options?.skipDiscovery ?? true,
     skipHarvest: input.options?.skipHarvest ?? true,
@@ -68,120 +70,135 @@ export async function orchestrate(input: OrchestrateInput, emit: Emit): Promise<
     dedupRecentHours: input.options?.dedupRecentHours ?? 72,
   };
 
-  emit({ type: 'status', agent: 'intent_parse', message: 'Parsing your request...' });
-  const intent = await parseIntent({
-    userMessage: input.prompt,
-    city: input.city,
-    sessionId: input.sessionId,
-  });
-  emit({ type: 'intent', intent });
+  let finalIds: string[] = [];
+  let outputSummary = 'error';
 
-  if (!opts.skipDiscovery) {
-    emit({ type: 'status', agent: 'discovery', message: 'Scanning for new civic sources...' });
-    const newSources = await runDiscovery({
-      city: input.city,
-      causeTags: intent.cause_tags,
-      sessionId: input.sessionId,
-    });
-    emit({
-      type: 'discovery_result',
-      newSourceCount: newSources.length,
-      sources: newSources.map(s => ({ handle: s.handle, relevance: s.civic_relevance })),
-    });
-  }
-
-  if (!opts.skipHarvest) {
-    emit({ type: 'status', agent: 'harvester', message: 'Pulling recent posts from sources...' });
-    const harvested = await runHarvester({
+  try {
+    emit({ type: 'status', agent: 'intent_parse', message: 'Parsing your request...' });
+    const intent = await parseIntent({
+      userMessage: input.prompt,
       city: input.city,
       sessionId: input.sessionId,
     });
-    emit({
-      type: 'harvest_result',
-      postCount: harvested.totalPosts,
-      eventCandidates: harvested.eventCandidates,
-    });
-  }
+    emit({ type: 'intent', intent });
 
-  emit({ type: 'status', agent: 'vision_extractor', message: 'Extracting event details from flyers...' });
-  const candidatePosts = await fetchUnprocessedEventPosts(input.city, opts.extractLimit);
-  const extracted: Array<{ event: ExtractedEvent; rawPostId: string }> = [];
-  for (const post of candidatePosts) {
-    if (post.image_urls.length === 0) continue;
-    const event = await runVisionExtractor({
-      imageUrl: post.image_urls[0],
-      rawPostId: post.id,
-      city: input.city,
-      currentDate: new Date().toISOString(),
-      postText: post.text_content ?? undefined,
-      sessionId: input.sessionId,
-    });
-    if (event && event.is_event) {
-      extracted.push({ event, rawPostId: post.id });
-      emit({ type: 'extracted', event, rawPostId: post.id });
-    }
-  }
-
-  emit({ type: 'status', agent: 'dedup', message: 'Merging duplicate events across sources...' });
-  await runDedup({
-    candidates: extracted,
-    city: input.city,
-    recentHours: opts.dedupRecentHours,
-    language: intent.language_filter === 'es' ? 'es' : 'en',
-    sessionId: input.sessionId,
-    onMerge: (merged, trace) => {
-      emit({
-        type: 'merged',
-        canonical: merged,
-        mergedFromCount: trace.mergedFromCount,
-        trace: trace.steps,
+    if (!opts.skipDiscovery) {
+      emit({ type: 'status', agent: 'discovery', message: 'Scanning for new civic sources...' });
+      const newSources = await runDiscovery({
+        city: input.city,
+        causeTags: intent.cause_tags,
+        sessionId: input.sessionId,
       });
-    },
-  });
+      emit({
+        type: 'discovery_result',
+        newSourceCount: newSources.length,
+        sources: newSources.map(s => ({ handle: s.handle, relevance: s.civic_relevance })),
+      });
+    }
 
-  // Branch: schedule-y prompt → run Scheduler instead of Recommender
-  if (isScheduleQuery(input.prompt)) {
-    emit({ type: 'status', agent: 'scheduler', message: 'Building your schedule from saved events...' });
-    const saves = await fetchSavedEvents(input.sessionId);
-    const schedule = await runScheduler({
-      userQuery: input.prompt,
+    if (!opts.skipHarvest) {
+      emit({ type: 'status', agent: 'harvester', message: 'Pulling recent posts from sources...' });
+      const harvested = await runHarvester({
+        city: input.city,
+        sessionId: input.sessionId,
+      });
+      emit({
+        type: 'harvest_result',
+        postCount: harvested.totalPosts,
+        eventCandidates: harvested.eventCandidates,
+      });
+    }
+
+    emit({ type: 'status', agent: 'vision_extractor', message: 'Extracting event details from flyers...' });
+    const candidatePosts = await fetchUnprocessedEventPosts(input.city, opts.extractLimit);
+    const extracted: Array<{ event: ExtractedEvent; rawPostId: string }> = [];
+    for (const post of candidatePosts) {
+      if (post.image_urls.length === 0) continue;
+      const event = await runVisionExtractor({
+        imageUrl: post.image_urls[0],
+        rawPostId: post.id,
+        city: input.city,
+        currentDate: new Date().toISOString(),
+        postText: post.text_content ?? undefined,
+        sessionId: input.sessionId,
+      });
+      if (event && event.is_event) {
+        extracted.push({ event, rawPostId: post.id });
+        emit({ type: 'extracted', event, rawPostId: post.id });
+      }
+    }
+
+    emit({ type: 'status', agent: 'dedup', message: 'Merging duplicate events across sources...' });
+    await runDedup({
+      candidates: extracted,
+      city: input.city,
+      recentHours: opts.dedupRecentHours,
       language: intent.language_filter === 'es' ? 'es' : 'en',
-      savedEvents: saves,
+      sessionId: input.sessionId,
+      onMerge: (merged, trace) => {
+        emit({
+          type: 'merged',
+          canonical: merged,
+          mergedFromCount: trace.mergedFromCount,
+          trace: trace.steps,
+        });
+      },
+    });
+
+    // Branch: schedule-y prompt → run Scheduler instead of Recommender
+    if (isScheduleQuery(input.prompt)) {
+      emit({ type: 'status', agent: 'scheduler', message: 'Building your schedule from saved events...' });
+      const saves = await fetchSavedEvents(input.sessionId);
+      const schedule = await runScheduler({
+        userQuery: input.prompt,
+        language: intent.language_filter === 'es' ? 'es' : 'en',
+        savedEvents: saves,
+        sessionId: input.sessionId,
+      });
+      emit({ type: 'scheduled', schedule });
+      finalIds = schedule.itinerary.map(i => i.event_id);
+      emit({ type: 'final_result', eventIds: finalIds });
+      outputSummary = `${finalIds.length} events scheduled`;
+      return;
+    }
+
+    emit({ type: 'status', agent: 'recommender', message: 'Ranking events for you...' });
+    let eventsForRanking = await fetchEventsForIntent(intent, input.city);
+    if (eventsForRanking.length === 0) {
+      eventsForRanking = await fetchEventsForIntent({ ...intent, cause_tags: [], event_types: [], date_range_start: null, date_range_end: null }, input.city);
+    }
+    const ranked = await runRecommender({
+      userPrefs: await fetchUserPrefs(input.sessionId),
+      events: eventsForRanking,
       sessionId: input.sessionId,
     });
-    emit({ type: 'scheduled', schedule });
-    emit({
-      type: 'final_result',
-      eventIds: schedule.itinerary.map(i => i.event_id),
+
+    for (const r of ranked) {
+      emit({
+        type: 'recommendation',
+        eventId: r.event_id,
+        score: r.score,
+        reasoning: r.reasoning,
+      });
+    }
+
+    finalIds = ranked.map(r => r.event_id);
+    emit({ type: 'final_result', eventIds: finalIds });
+    outputSummary = `${finalIds.length} events recommended`;
+  } catch (err) {
+    outputSummary = `error: ${err instanceof Error ? err.message : String(err)}`;
+    emit({ type: 'error', message: outputSummary });
+  } finally {
+    void logAgentRun({
+      agentName: 'orchestrator',
+      sessionId: input.sessionId,
+      inputSummary: input.prompt.slice(0, 120),
+      outputSummary,
+      reasoningTrace: { city: input.city, opts },
+      durationMs: Date.now() - startedAt,
+      model: 'multi-agent',
     });
-    return;
   }
-
-  emit({ type: 'status', agent: 'recommender', message: 'Ranking events for you...' });
-  let eventsForRanking = await fetchEventsForIntent(intent, input.city);
-  // Fallback: if strict filters return nothing, broaden to all upcoming city events
-  if (eventsForRanking.length === 0) {
-    eventsForRanking = await fetchEventsForIntent({ ...intent, cause_tags: [], event_types: [], date_range_start: null, date_range_end: null }, input.city);
-  }
-  const ranked = await runRecommender({
-    userPrefs: await fetchUserPrefs(input.sessionId),
-    events: eventsForRanking,
-    sessionId: input.sessionId,
-  });
-
-  for (const r of ranked) {
-    emit({
-      type: 'recommendation',
-      eventId: r.event_id,
-      score: r.score,
-      reasoning: r.reasoning,
-    });
-  }
-
-  emit({
-    type: 'final_result',
-    eventIds: ranked.map(r => r.event_id),
-  });
 }
 
 async function fetchSavedEvents(sessionId: string) {
@@ -258,7 +275,7 @@ async function fetchEventsForIntent(intent: ParsedIntent, city: string) {
     select: {
       id: true, title: true, event_type: true, action_type: true,
       datetime_iso: true, location_text: true, organizer: true, cause_tags: true,
-      lat: true, lng: true,
+      lat: true, lng: true, borough: true, neighborhood: true,
     },
     orderBy: { datetime_iso: 'asc' },
     take: 20,
@@ -271,6 +288,8 @@ async function fetchEventsForIntent(intent: ParsedIntent, city: string) {
     action_type: e.action_type,
     datetime_iso: e.datetime_iso ? e.datetime_iso.toISOString() : null,
     location_text: e.location_text ?? '',
+    borough: e.borough ?? null,
+    neighborhood: e.neighborhood ?? null,
     organizer: e.organizer,
     cause_tags: e.cause_tags,
     distance_km: null,

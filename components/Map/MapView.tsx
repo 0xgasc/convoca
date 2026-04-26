@@ -6,7 +6,6 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { CITIES } from '@/lib/constants';
 import type { CanonicalEvent, CitySlug, FlagType } from '@/lib/types';
 import { renderEventMarkers } from './EventMarkers';
-import { renderFlagOverlay } from './FlagOverlay';
 import { renderBoroughOverlay } from './BoroughOverlay';
 
 export interface FlagRow {
@@ -31,16 +30,15 @@ interface MapViewProps {
   highlightedIds?: Set<string>;
   selectedBoroughs?: Set<string>;
   onEventClick?: (event: CanonicalEvent) => void;
-  onMapClick?: (lngLat: { lng: number; lat: number }) => void;
   onBoroughToggle?: (slug: string) => void;
 }
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '';
 
-export function MapView({ city, events, flags, highlightedIds, selectedBoroughs, onEventClick, onMapClick, onBoroughToggle }: MapViewProps) {
+export function MapView({ city, events, flags, highlightedIds, selectedBoroughs, onEventClick, onBoroughToggle }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapboxMap | null>(null);
-  const cleanupRef = useRef<{ events?: () => void; flags?: () => void; boroughs?: () => void }>({});
+  const cleanupRef = useRef<{ events?: () => void; boroughs?: () => void }>({});
   const [styleReady, setStyleReady] = useState(false);
   const [tokenMissing] = useState(!MAPBOX_TOKEN);
 
@@ -58,17 +56,19 @@ export function MapView({ city, events, flags, highlightedIds, selectedBoroughs,
     });
     mapRef.current = map;
     map.on('style.load', () => setStyleReady(true));
-    if (onMapClick) {
-      map.on('click', e => onMapClick({ lng: e.lngLat.lng, lat: e.lngLat.lat }));
-    }
+
+    // Explicitly resize when container dimensions change (e.g. right panel open/close)
+    const ro = new ResizeObserver(() => { map.resize(); });
+    ro.observe(containerRef.current!);
+
     return () => {
-      cleanupRef.current.events?.();
-      cleanupRef.current.flags?.();
+      ro.disconnect();
+      const evCleanup = cleanupRef.current.events;
+      evCleanup?.();
       map.remove();
       mapRef.current = null;
       setStyleReady(false);
     };
-    // onMapClick intentionally omitted — capture latest via closure rebinding below
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tokenMissing]);
 
@@ -84,26 +84,21 @@ export function MapView({ city, events, flags, highlightedIds, selectedBoroughs,
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReady) return;
-    cleanupRef.current.events?.();
+    const prev = cleanupRef.current.events;
+    prev?.();
     cleanupRef.current.events = renderEventMarkers(map, events, {
       highlightedIds,
+      flags,
       onClick: onEventClick,
     });
-  }, [events, styleReady, highlightedIds, onEventClick]);
-
-  // Render flag overlay
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !styleReady) return;
-    cleanupRef.current.flags?.();
-    cleanupRef.current.flags = renderFlagOverlay(map, flags);
-  }, [flags, styleReady]);
+  }, [events, flags, styleReady, highlightedIds, onEventClick]);
 
   // Render NYC borough overlay (only when in NYC and a toggle handler is set)
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReady) return;
-    cleanupRef.current.boroughs?.();
+    const prevBoroughs = cleanupRef.current.boroughs;
+    prevBoroughs?.();
     cleanupRef.current.boroughs = undefined;
     if (city !== 'nyc' || !onBoroughToggle) return;
     let cleanup: (() => void) | undefined;

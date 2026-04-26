@@ -75,6 +75,7 @@ export async function GET(req: Request) {
         id: true, city_slug: true, title: true, event_type: true, action_type: true,
         datetime_iso: true, datetime_text_raw: true, end_datetime_iso: true,
         location_text: true, location_specificity: true, lat: true, lng: true,
+        borough: true, neighborhood: true,
         organizer: true, cause_tags: true, language: true, signup_url: true,
         source_image_url: true, status: true, extraction_confidence: true, created_at: true,
       },
@@ -93,7 +94,8 @@ function serializeEvent(e: {
   id: string; city_slug: string | null; title: string; event_type: string; action_type: string;
   datetime_iso: Date | null; datetime_text_raw: string | null; end_datetime_iso: Date | null;
   location_text: string | null; location_specificity: string | null;
-  lat: unknown; lng: unknown; organizer: string | null; cause_tags: string[]; language: string;
+  lat: unknown; lng: unknown; borough: string | null; neighborhood: string | null;
+  organizer: string | null; cause_tags: string[]; language: string;
   signup_url: string | null; source_image_url: string | null; status: string;
   extraction_confidence: unknown; created_at: Date;
 }) {

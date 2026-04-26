@@ -157,6 +157,8 @@ Return JSON only:
   "end_datetime_iso": "ISO-8601" | null,
   "location_text": string,
   "location_specificity": "exact_address"|"landmark"|"neighborhood"|"vague"|"online",
+  "borough": "manhattan"|"brooklyn"|"queens"|"bronx"|"staten_island"|null,
+  "neighborhood": string | null,
   "organizer": string | null,
   "cause_tags": [string],
   "language": "en"|"es"|"mixed",
@@ -178,6 +180,8 @@ Resolution rules:
 - If flyer says RSVP/register/cupos limitados → action_type: rsvp or register
 - If flyer is a mutual aid distribution → event_type: mutual_aid_distribution, action_type: attend (unless capacity given)
 - Bring-supplies events → action_type: bring_supplies, populate supplies_needed array
+- borough: infer from location for NYC (e.g. "Foley Square" → manhattan, "Sunset Park" → brooklyn). null for Guatemala.
+- neighborhood: specific neighborhood name if determinable (e.g. "Bed-Stuy", "Jackson Heights"), else null.
 
 Output strictly valid JSON. No prose outside the object.`;
 
@@ -221,6 +225,8 @@ Return JSON only, same shape as the vision extractor:
   "end_datetime_iso": "ISO-8601" | null,
   "location_text": string,
   "location_specificity": "exact_address"|"landmark"|"neighborhood"|"vague"|"online",
+  "borough": "manhattan"|"brooklyn"|"queens"|"bronx"|"staten_island"|null,
+  "neighborhood": string | null,
   "organizer": string | null,
   "cause_tags": [string],
   "language": "en"|"es"|"mixed",
@@ -243,6 +249,8 @@ Resolution rules:
 - If the post lists a specific street address → location_specificity: exact_address
 - Council-style chamber location ("250 Broadway Hearing Room") → exact_address
 - Borough-only ("Brooklyn") → neighborhood
+- borough: infer from location for NYC (e.g. "City Hall" → manhattan, "Bed-Stuy" → brooklyn). null for Guatemala.
+- neighborhood: specific neighborhood name if determinable, else null.
 
 Output strictly valid JSON. No prose outside the object.`;
 
@@ -314,6 +322,8 @@ export const RECOMMENDER_PROMPT = (params: {
     action_type: string;
     datetime_iso: string;
     location_text: string;
+    borough: string | null;
+    neighborhood: string | null;
     organizer: string;
     cause_tags: string[];
     distance_km: number | null;
@@ -330,16 +340,18 @@ For each event output a score 0.0-1.0 and a one-sentence reasoning written
 directly to the user in ${params.userPrefs.language}.
 
 Scoring guidance:
-- Direct cause match: strong positive signal
-- action_prefs alignment (e.g., user wants to volunteer, event is volunteer_opportunity): strong positive
-- Geographic proximity: moderate positive (closer = better, < 2km is local)
+- Direct cause match: strong positive signal (+0.3)
+- action_prefs alignment (e.g., user wants to volunteer, event is volunteer_opportunity): strong positive (+0.25)
+- Hyperlocal proximity: if event.neighborhood matches user neighborhood → big boost (+0.3); same borough → moderate boost (+0.15)
+- distance_km < 1: strong positive; < 5: moderate positive
 - Time proximity: small positive (sooner = better, within preferred window)
 - Penalize generic events that don't match any pref
 
 Reasoning rules:
-- Reference concrete prefs and event details, not "this matches your interests"
+- Reference concrete prefs and event details — name the neighborhood if it matches, name the cause, name the organizer
 - 1 sentence, conversational, second person ("Te lo recomendamos porque..." / "We recommend this because...")
-- If score < 0.4, include why it's still in results (e.g., "Outside your usual causes but happening in your neighborhood")
+- If score < 0.4, say why it's still shown (e.g., "Outside your usual causes but in your neighborhood")
+- Never say "this matches your interests" — be specific
 
 Return JSON only:
 {

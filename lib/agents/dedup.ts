@@ -149,10 +149,13 @@ async function insertCandidateEvent(
         location_specificity: e.location_specificity,
         lat: e.lat ?? null,
         lng: e.lng ?? null,
+        borough: e.borough ?? null,
+        neighborhood: e.neighborhood ?? null,
         organizer: e.organizer,
         cause_tags: e.cause_tags,
         language: e.language,
         signup_url: e.signup_url,
+        source_image_url: e.source_image_url ?? null,
         capacity: e.capacity,
         extraction_confidence: e.confidence,
         status: 'upcoming',
@@ -174,14 +177,25 @@ async function findNearbyEvents(
   city: CitySlug,
   recentHours: number
 ): Promise<CanonicalEvent[]> {
+  const candidate = await prisma.event.findUnique({ where: { id: candidateId } });
   const since = new Date(Date.now() - recentHours * 60 * 60 * 1000);
+
+  // Build datetime window: ±3 days around the candidate's event datetime (if known)
+  const datetimeFilter = candidate?.datetime_iso ? (() => {
+    const dt = candidate.datetime_iso!;
+    const window = 3 * 24 * 60 * 60 * 1000;
+    return { gte: new Date(dt.getTime() - window), lte: new Date(dt.getTime() + window) };
+  })() : undefined;
+
   const rows = await prisma.event.findMany({
     where: {
       city_slug: city,
       created_at: { gte: since },
       NOT: { id: candidateId },
+      ...(datetimeFilter ? { datetime_iso: datetimeFilter } : {}),
     },
-    take: 10,
+    orderBy: { created_at: 'desc' },
+    take: 8,
   });
   return rows.map(rowToCanonical);
 }
@@ -207,7 +221,8 @@ function rowToCanonical(row: {
   id: string; city_slug: string | null; title: string; event_type: string; action_type: string;
   datetime_iso: Date | null; datetime_text_raw: string | null; end_datetime_iso: Date | null;
   location_text: string | null; location_specificity: string | null;
-  lat: unknown; lng: unknown; organizer: string | null; cause_tags: string[]; language: string;
+  lat: unknown; lng: unknown; borough?: string | null; neighborhood?: string | null;
+  organizer: string | null; cause_tags: string[]; language: string;
   signup_url: string | null; capacity: number | null; signup_deadline: Date | null;
   status: string; extraction_confidence: unknown; created_at: Date;
 }): CanonicalEvent {
@@ -224,6 +239,8 @@ function rowToCanonical(row: {
     location_specificity: (row.location_specificity ?? 'vague') as CanonicalEvent['location_specificity'],
     lat: row.lat == null ? null : Number(row.lat),
     lng: row.lng == null ? null : Number(row.lng),
+    borough: row.borough ?? null,
+    neighborhood: row.neighborhood ?? null,
     organizer: row.organizer,
     cause_tags: row.cause_tags as CanonicalEvent['cause_tags'],
     language: row.language as CanonicalEvent['language'],

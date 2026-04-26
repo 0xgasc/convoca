@@ -33,6 +33,9 @@ export default function SubmitPage() {
   const [sessionId, setSessionId] = useState<string>('');
   const [city, setCity] = useState<CitySlug>('nyc');
   const [tracked, setTracked] = useState<SubmissionStatus[]>([]);
+  const [appealId, setAppealId] = useState<string | null>(null);
+  const [appealText, setAppealText] = useState('');
+  const [appealing, setAppealing] = useState(false);
 
   useEffect(() => {
     setSessionId(getOrCreateSessionId());
@@ -63,6 +66,31 @@ export default function SubmitPage() {
     }, POLL_MS);
     return () => clearInterval(t);
   }, [tracked]);
+
+  const handleAppeal = useCallback(async (id: string) => {
+    if (!appealText.trim()) return;
+    setAppealing(true);
+    try {
+      const res = await fetch(`/api/submissions/${id}/appeal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, context: appealText }),
+      });
+      const json = await res.json();
+      if (json.status === 'approved') {
+        setTracked(prev => prev.map(s => s.id === id ? {
+          ...s, status: 'approved' as const, result_event_id: json.event_id, rejection_reason: null,
+        } : s));
+      } else {
+        setTracked(prev => prev.map(s => s.id === id ? {
+          ...s, rejection_reason: json.message ?? 'Still not confirmed as a civic event.',
+        } : s));
+      }
+      setAppealId(null);
+      setAppealText('');
+    } catch { /* best-effort */ }
+    finally { setAppealing(false); }
+  }, [sessionId, appealText]);
 
   const handleSubmitted = useCallback((submissionId: string) => {
     setTracked(prev => [
@@ -139,7 +167,44 @@ export default function SubmitPage() {
                     </Link>
                   )}
                   {s.status === 'rejected' && s.rejection_reason && (
-                    <div className="mt-1 text-xs text-neutral-700">{s.rejection_reason}</div>
+                    <div className="mt-1 text-xs text-neutral-600 italic">{s.rejection_reason}</div>
+                  )}
+                  {s.status === 'rejected' && (
+                    appealId === s.id ? (
+                      <div className="mt-2 space-y-1.5">
+                        <textarea
+                          value={appealText}
+                          onChange={e => setAppealText(e.target.value)}
+                          placeholder={lang === 'es'
+                            ? 'Explicá por qué es un evento cívico (organizador, acción, lugar)…'
+                            : 'Explain why this is a civic event — organizer, what attendees will do, location…'}
+                          rows={2}
+                          className="w-full text-xs rounded border border-violet-300 px-2 py-1.5 text-neutral-900 placeholder:text-neutral-400 bg-white resize-none focus:outline-none focus:ring-1 focus:ring-violet-400"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => void handleAppeal(s.id)}
+                            disabled={appealing || !appealText.trim()}
+                            className="text-xs px-3 py-1 bg-violet-600 text-white rounded font-medium hover:bg-violet-700 disabled:opacity-50"
+                          >
+                            {appealing ? (lang === 'es' ? 'Re-evaluando…' : 'Re-reviewing…') : (lang === 'es' ? 'Enviar al agente →' : 'Send to agent →')}
+                          </button>
+                          <button
+                            onClick={() => { setAppealId(null); setAppealText(''); }}
+                            className="text-xs px-3 py-1 bg-neutral-100 text-neutral-700 rounded hover:bg-neutral-200"
+                          >
+                            {lang === 'es' ? 'Cancelar' : 'Cancel'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setAppealId(s.id)}
+                        className="mt-1.5 text-xs text-violet-700 hover:text-violet-900 font-medium"
+                      >
+                        ✦ {lang === 'es' ? 'Agregar contexto y re-evaluar' : 'Add context & re-review'}
+                      </button>
+                    )
                   )}
                 </li>
               ))}

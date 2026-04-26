@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { GitMerge, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface DedupRun {
   id: string;
@@ -15,76 +16,93 @@ interface DedupRun {
 
 interface ReasoningTraceProps {
   runs: DedupRun[];
-  eventTitle: string;
+  eventTitle?: string;
   language?: 'en' | 'es';
 }
 
-function extractSteps(trace: unknown): string[] {
-  if (!trace || typeof trace !== 'object') return [];
-  const t = trace as Record<string, unknown>;
-  if (Array.isArray(t.reasoning_trace)) return t.reasoning_trace.filter((x): x is string => typeof x === 'string');
-  if (Array.isArray(t.steps)) return t.steps.filter((x): x is string => typeof x === 'string');
-  return [];
+function parseSameEvent(output: string | null): boolean | null {
+  if (!output) return null;
+  if (output.includes('same_event=true')) return true;
+  if (output.includes('same_event=false')) return false;
+  return null;
 }
 
-export function ReasoningTrace({ runs, eventTitle, language = 'en' }: ReasoningTraceProps) {
+function parseConfidence(output: string | null): number | null {
+  if (!output) return null;
+  const m = output.match(/\(([\d.]+)\)/);
+  if (!m) return null;
+  return parseFloat(m[1]);
+}
+
+export function ReasoningTrace({ runs, language = 'en' }: ReasoningTraceProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const relevant = runs.filter(r => {
-    const summary = (r.input_summary ?? '') + ' ' + (r.output_summary ?? '');
-    return summary.toLowerCase().includes(eventTitle.toLowerCase().slice(0, 20));
-  });
+  // Only show dedup traces where agent confirmed a merge (same_event=true)
+  const merges = runs.filter(r => parseSameEvent(r.output_summary) === true);
+  const checks = runs.length;
 
-  const display = relevant.length > 0 ? relevant : runs.slice(0, 3);
+  // Nothing to show if there was never a merge comparison
+  if (checks === 0) return null;
 
-  if (display.length === 0) {
-    return (
-      <div className="text-sm text-neutral-500 italic">
-        {language === 'es' ? 'Sin trazas de fusión.' : 'No dedup reasoning recorded.'}
-      </div>
-    );
-  }
+  const lang = language;
 
-  const headline = language === 'es' ? 'Razonamiento del agente de fusión' : 'Dedup agent reasoning';
-  const toggle = expanded
-    ? (language === 'es' ? 'Ocultar' : 'Hide')
-    : (language === 'es' ? `Mostrar ${display.length} traza${display.length === 1 ? '' : 's'}` : `Show ${display.length} trace${display.length === 1 ? '' : 's'}`);
+  const mergeCount = merges.length;
+  const summaryLine = mergeCount > 0
+    ? (lang === 'es'
+        ? `El agente cruzó ${checks} post${checks === 1 ? '' : 's'} y confirmó que ${mergeCount > 1 ? 'todos hablan' : 'habla'} del mismo evento.`
+        : `The agent cross-checked ${checks} post${checks === 1 ? '' : 's'} and confirmed ${mergeCount > 1 ? 'they all describe' : 'it describes'} this event.`)
+    : (lang === 'es'
+        ? `El agente revisó ${checks} post${checks === 1 ? '' : 's'} de distintas fuentes para detectar duplicados.`
+        : `The agent reviewed ${checks} post${checks === 1 ? '' : 's'} across sources to check for duplicates.`);
 
   return (
-    <div className="rounded-lg border border-green-200 bg-green-50 p-4">
-      <div className="flex items-baseline justify-between mb-2">
-        <div>
-          <div className="text-xs uppercase tracking-wide text-green-700">{headline}</div>
-          <div className="text-sm text-green-900">
-            {language === 'es' ? 'Cómo el agente decidió combinar estas fuentes' : 'How the agent decided to merge these sources'}
+    <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2.5">
+          <GitMerge className="w-4 h-4 text-neutral-500 mt-0.5 flex-shrink-0" />
+          <div>
+            <div className="text-xs font-semibold text-neutral-700">
+              {lang === 'es' ? 'Verificación de fuentes' : 'Source verification'}
+            </div>
+            <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{summaryLine}</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setExpanded(v => !v)}
-          className="text-xs text-green-800 hover:underline"
-        >
-          {toggle}
-        </button>
+        {merges.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded(v => !v)}
+            className="flex-shrink-0 flex items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-700 mt-0.5"
+          >
+            {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {expanded
+              ? (lang === 'es' ? 'Ocultar' : 'Hide')
+              : (lang === 'es' ? 'Cómo lo decidió' : 'How it decided')}
+          </button>
+        )}
       </div>
-      {expanded && (
-        <div className="space-y-3 mt-3">
-          {display.map(run => {
-            const steps = extractSteps(run.reasoning_trace);
+
+      {expanded && merges.length > 0 && (
+        <div className="mt-3 space-y-2 pl-6">
+          {merges.map(run => {
+            const conf = parseConfidence(run.output_summary);
+            const confPct = conf != null ? Math.round(conf * 100) : null;
             return (
-              <div key={run.id} className="bg-white rounded border border-green-200 p-3">
-                <div className="flex justify-between text-[11px] text-neutral-500 mb-1">
-                  <span>{run.model ?? 'opus'} · {run.duration_ms ?? '?'}ms</span>
-                  <span>{new Date(run.created_at).toLocaleString()}</span>
+              <div key={run.id} className="text-xs text-neutral-600 bg-white rounded border border-neutral-200 px-3 py-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium text-neutral-700">
+                    {lang === 'es' ? 'Mismo evento confirmado' : 'Same event confirmed'}
+                  </span>
+                  {confPct != null && (
+                    <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                      {confPct}% {lang === 'es' ? 'confianza' : 'confidence'}
+                    </span>
+                  )}
                 </div>
-                {run.output_summary && (
-                  <div className="text-sm text-neutral-900 mb-2">{run.output_summary}</div>
-                )}
-                {steps.length > 0 && (
-                  <ol className="text-sm text-neutral-700 list-decimal list-inside space-y-1">
-                    {steps.map((s, i) => <li key={i}>{s}</li>)}
-                  </ol>
-                )}
+                <p className="text-neutral-500 leading-relaxed">
+                  {lang === 'es'
+                    ? 'El agente comparó fechas, lugares y organizadores entre fuentes y determinó que apuntan al mismo evento.'
+                    : 'The agent compared dates, locations, and organizers across sources and determined they point to the same event.'}
+                </p>
               </div>
             );
           })}

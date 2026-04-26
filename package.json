@@ -10,7 +10,8 @@
     "postinstall": "prisma generate",
     "seed:sources": "tsx scripts/seed-nyc-sources.ts",
     "seed:demo": "tsx scripts/seed-demo-events.ts",
-    "test:vision": "tsx scripts/test-vision.ts"
+    "test:vision": "tsx scripts/test-vision.ts",
+    "seed:test-user": "tsx scripts/seed-test-user.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

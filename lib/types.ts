@@ -125,6 +125,11 @@ export interface ExtractedEvent {
   // populated after geocoding
   lat?: number;
   lng?: number;
+  // hyperlocal classification (NYC only)
+  borough?: string | null;
+  neighborhood?: string | null;
+  // set by caller before passing to dedup
+  source_image_url?: string | null;
 }
 
 export interface CanonicalEvent {
@@ -140,6 +145,8 @@ export interface CanonicalEvent {
   location_specificity: LocationSpecificity;
   lat: number | null;
   lng: number | null;
+  borough: string | null;
+  neighborhood: string | null;
   organizer: string | null;
   cause_tags: CauseTag[];
   language: Language;

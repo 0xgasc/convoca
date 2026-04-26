@@ -25,6 +25,8 @@ const ExtractedEventSchema = z.object({
   end_datetime_iso: z.string().nullable(),
   location_text: z.string(),
   location_specificity: z.enum(['exact_address', 'landmark', 'neighborhood', 'vague', 'online']),
+  borough: z.enum(['manhattan', 'brooklyn', 'queens', 'bronx', 'staten_island']).nullable().optional(),
+  neighborhood: z.string().nullable().optional(),
   organizer: z.string().nullable(),
   cause_tags: z.array(z.enum(CAUSE_VOCABULARY as unknown as [string, ...string[]])),
   language: z.enum(['en', 'es', 'mixed']),
@@ -148,6 +150,9 @@ export async function runVisionExtractor(
     }
   }
 
+  // Tag source image URL on the event so dedup can persist it
+  event.source_image_url = input.sourceImageUrl ?? input.imageUrl ?? null;
+
   if (input.rawPostId) {
     const inserted = await prisma.event.create({
       data: {
@@ -162,6 +167,8 @@ export async function runVisionExtractor(
         location_specificity: event.location_specificity,
         lat: (event as { lat?: number }).lat ?? null,
         lng: (event as { lng?: number }).lng ?? null,
+        borough: event.borough ?? null,
+        neighborhood: event.neighborhood ?? null,
         organizer: event.organizer,
         cause_tags: event.cause_tags,
         language: event.language,
@@ -289,6 +296,8 @@ export async function runTextExtractor(input: TextExtractorInput): Promise<Extra
           location_specificity: event.location_specificity,
           lat: (event as { lat?: number }).lat ?? null,
           lng: (event as { lng?: number }).lng ?? null,
+          borough: event.borough ?? null,
+          neighborhood: event.neighborhood ?? null,
           organizer: event.organizer,
           cause_tags: event.cause_tags,
           language: event.language,
@@ -355,22 +364,62 @@ function shortUrl(url: string): string {
   return url.split('/').slice(-2).join('/').slice(0, 60);
 }
 
-async function geocode(
+// NYC hard bbox: lon_min, lat_min, lon_max, lat_max
+const CITY_BBOX: Record<string, string> = {
+  nyc: '-74.26,40.48,-73.68,40.93',
+  guatemala_city: '-90.65,14.45,-90.40,14.75',
+};
+
+async function geocodeQuery(
   query: string,
   city: 'nyc' | 'guatemala_city'
 ): Promise<{ lat: number; lng: number } | null> {
   if (!process.env.MAPBOX_TOKEN) return null;
-  const proximity = city === 'nyc' ? '-74.0060,40.7128' : '-90.5069,14.6349';
-  const country = city === 'nyc' ? 'us' : 'gt';
-  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?proximity=${proximity}&country=${country}&access_token=${process.env.MAPBOX_TOKEN}`;
+  const bbox = CITY_BBOX[city] ?? '';
+  const params = new URLSearchParams({
+    proximity: city === 'nyc' ? '-74.0060,40.7128' : '-90.5069,14.6349',
+    bbox,
+    country: city === 'nyc' ? 'us' : 'gt',
+    types: 'poi,address,neighborhood,locality,place',
+    limit: '1',
+    access_token: process.env.MAPBOX_TOKEN,
+  });
   try {
-    const res = await fetch(url);
+    const res = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?${params}`
+    );
     if (!res.ok) return null;
     const json = await res.json();
-    const center = json?.features?.[0]?.center;
-    if (!center) return null;
-    return { lng: center[0], lat: center[1] };
-  } catch {
-    return null;
+    const feature = json?.features?.[0] as { center: [number, number]; relevance?: number } | undefined;
+    if (!feature?.center) return null;
+    if ((feature.relevance ?? 1) < 0.3) return null;
+    const [minLng, minLat, maxLng, maxLat] = bbox.split(',').map(Number);
+    const [lng, lat] = feature.center;
+    if (lng < minLng || lng > maxLng || lat < minLat || lat > maxLat) return null;
+    return { lng, lat };
+  } catch { return null; }
+}
+
+async function geocode(
+  rawQuery: string,
+  city: 'nyc' | 'guatemala_city'
+): Promise<{ lat: number; lng: number } | null> {
+  const normalized = rawQuery.replace(/\s*:\s*/g, ', ');
+  const cityHint = city === 'nyc' ? ', New York City, NY' : ', Ciudad de Guatemala';
+  const hasHint = /new york|nyc|\bny\b/i.test(normalized);
+  const fullQuery = hasHint ? normalized : `${normalized}${cityHint}`;
+
+  // Try full query
+  const result = await geocodeQuery(fullQuery, city);
+  if (result) return result;
+
+  // Fallback: strip sub-venue prefix ("Cop Cot, Central Park" → "Central Park")
+  const commaIdx = normalized.indexOf(',');
+  if (commaIdx > 0) {
+    const simpler = normalized.slice(commaIdx + 1).trim();
+    const simplerQuery = hasHint ? simpler : `${simpler}${cityHint}`;
+    return geocodeQuery(simplerQuery, city);
   }
+
+  return null;
 }

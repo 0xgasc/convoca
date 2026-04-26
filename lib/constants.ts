@@ -31,26 +31,26 @@ export const FLAG_TYPES = [
 ] as const;
 
 // Display metadata for UI
-export const EVENT_TYPE_DISPLAY: Record<string, { icon: string; label_en: string; label_es: string }> = {
-  protest: { icon: '✊', label_en: 'Protest', label_es: 'Protesta' },
-  march: { icon: '🚶', label_en: 'March', label_es: 'Marcha' },
-  rally: { icon: '📣', label_en: 'Rally', label_es: 'Mitin' },
-  town_hall: { icon: '🏛️', label_en: 'Town hall', label_es: 'Cabildo' },
-  public_hearing: { icon: '⚖️', label_en: 'Public hearing', label_es: 'Audiencia pública' },
-  volunteer_opportunity: { icon: '🙋', label_en: 'Volunteer', label_es: 'Voluntariado' },
-  mutual_aid_distribution: { icon: '🤝', label_en: 'Mutual aid', label_es: 'Ayuda mutua' },
-  community_meeting: { icon: '👥', label_en: 'Community meeting', label_es: 'Reunión comunitaria' },
-  teach_in: { icon: '📚', label_en: 'Teach-in', label_es: 'Charla educativa' },
-  vigil: { icon: '🕯️', label_en: 'Vigil', label_es: 'Vigilia' },
-  commemoration: { icon: '🌹', label_en: 'Commemoration', label_es: 'Conmemoración' },
-  skill_share: { icon: '🛠️', label_en: 'Skill share', label_es: 'Taller' },
-  clinic: { icon: '⚕️', label_en: 'Clinic', label_es: 'Clínica' },
-  direct_action: { icon: '🔥', label_en: 'Direct action', label_es: 'Acción directa' },
-  cultural_event: { icon: '🎭', label_en: 'Cultural event', label_es: 'Evento cultural' },
-  free_public_program: { icon: '🎟️', label_en: 'Free program', label_es: 'Programa gratuito' },
-  community_market: { icon: '🛒', label_en: 'Community market', label_es: 'Mercado' },
-  block_party: { icon: '🎉', label_en: 'Block party', label_es: 'Fiesta de barrio' },
-  other: { icon: '📍', label_en: 'Other', label_es: 'Otro' },
+export const EVENT_TYPE_DISPLAY: Record<string, { icon: string; color: string; label_en: string; label_es: string }> = {
+  protest:               { icon: 'PRO', color: '#dc2626', label_en: 'Protest',          label_es: 'Protesta' },
+  march:                 { icon: 'MCH', color: '#dc2626', label_en: 'March',             label_es: 'Marcha' },
+  rally:                 { icon: 'RLY', color: '#ea580c', label_en: 'Rally',             label_es: 'Mitin' },
+  town_hall:             { icon: 'TH',  color: '#2563eb', label_en: 'Town hall',         label_es: 'Cabildo' },
+  public_hearing:        { icon: 'PH',  color: '#2563eb', label_en: 'Public hearing',    label_es: 'Audiencia pública' },
+  volunteer_opportunity: { icon: 'VOL', color: '#16a34a', label_en: 'Volunteer',         label_es: 'Voluntariado' },
+  mutual_aid_distribution: { icon: 'AID', color: '#16a34a', label_en: 'Mutual aid',     label_es: 'Ayuda mutua' },
+  community_meeting:     { icon: 'MTG', color: '#0891b2', label_en: 'Community meeting', label_es: 'Reunión comunitaria' },
+  teach_in:              { icon: 'EDU', color: '#7c3aed', label_en: 'Teach-in',          label_es: 'Charla educativa' },
+  vigil:                 { icon: 'VIG', color: '#475569', label_en: 'Vigil',             label_es: 'Vigilia' },
+  commemoration:         { icon: 'COM', color: '#475569', label_en: 'Commemoration',     label_es: 'Conmemoración' },
+  skill_share:           { icon: 'SKL', color: '#7c3aed', label_en: 'Skill share',       label_es: 'Taller' },
+  clinic:                { icon: 'CLI', color: '#16a34a', label_en: 'Clinic',            label_es: 'Clínica' },
+  direct_action:         { icon: 'ACT', color: '#dc2626', label_en: 'Direct action',     label_es: 'Acción directa' },
+  cultural_event:        { icon: 'CUL', color: '#d97706', label_en: 'Cultural event',    label_es: 'Evento cultural' },
+  free_public_program:   { icon: 'FRE', color: '#d97706', label_en: 'Free program',      label_es: 'Programa gratuito' },
+  community_market:      { icon: 'MKT', color: '#d97706', label_en: 'Community market',  label_es: 'Mercado' },
+  block_party:           { icon: 'BLK', color: '#d97706', label_en: 'Block party',       label_es: 'Fiesta de barrio' },
+  other:                 { icon: '·',   color: '#6b7280', label_en: 'Other',             label_es: 'Otro' },
 };
 
 export const CAUSE_DISPLAY: Record<string, { label_en: string; label_es: string }> = {
@@ -84,24 +84,25 @@ export const CAUSE_DISPLAY: Record<string, { label_en: string; label_es: string 
 
 export const FLAG_TYPE_DISPLAY: Record<string, {
   icon: string;
+  abbr: string;
   color: string;
   label_en: string;
   label_es: string;
   default_ttl_minutes: number;
   applicable_cities: string[];
 }> = {
-  ice_presence: { icon: '🛑', color: '#dc2626', label_en: 'ICE presence', label_es: 'Presencia de ICE', default_ttl_minutes: 240, applicable_cities: ['nyc'] },
-  police_presence: { icon: '👮', color: '#ea580c', label_en: 'Police presence', label_es: 'Presencia policial', default_ttl_minutes: 120, applicable_cities: ['nyc', 'guatemala_city'] },
-  route_change: { icon: '↪️', color: '#ca8a04', label_en: 'Route change', label_es: 'Cambio de ruta', default_ttl_minutes: 180, applicable_cities: ['nyc', 'guatemala_city'] },
-  counter_protest: { icon: '⚠️', color: '#b91c1c', label_en: 'Counter-protest', label_es: 'Contra-manifestación', default_ttl_minutes: 120, applicable_cities: ['nyc', 'guatemala_city'] },
-  dispersal_warning: { icon: '🚨', color: '#991b1b', label_en: 'Dispersal warning', label_es: 'Aviso de dispersión', default_ttl_minutes: 60, applicable_cities: ['nyc', 'guatemala_city'] },
-  disinfo: { icon: '❓', color: '#7c3aed', label_en: 'Possible disinfo', label_es: 'Posible desinformación', default_ttl_minutes: 1440, applicable_cities: ['nyc', 'guatemala_city'] },
-  medical_aid: { icon: '➕', color: '#16a34a', label_en: 'Medical aid', label_es: 'Punto de auxilio', default_ttl_minutes: 360, applicable_cities: ['nyc', 'guatemala_city'] },
-  safe_space: { icon: '🏠', color: '#0891b2', label_en: 'Safe space', label_es: 'Espacio seguro', default_ttl_minutes: 480, applicable_cities: ['nyc', 'guatemala_city'] },
-  supplies_needed: { icon: '📦', color: '#2563eb', label_en: 'Supplies needed', label_es: 'Se necesitan suministros', default_ttl_minutes: 360, applicable_cities: ['nyc', 'guatemala_city'] },
-  signup_full: { icon: '🚫', color: '#6b7280', label_en: 'Signup full', label_es: 'Cupo lleno', default_ttl_minutes: 1440, applicable_cities: ['nyc', 'guatemala_city'] },
-  transport_offer: { icon: '🚗', color: '#0d9488', label_en: 'Transport offered', label_es: 'Transporte disponible', default_ttl_minutes: 240, applicable_cities: ['nyc', 'guatemala_city'] },
-  other: { icon: '📍', color: '#6b7280', label_en: 'Other', label_es: 'Otro', default_ttl_minutes: 120, applicable_cities: ['nyc', 'guatemala_city'] },
+  ice_presence:      { icon: 'ICE', abbr: 'ICE', color: '#dc2626', label_en: 'ICE presence',      label_es: 'Presencia de ICE',          default_ttl_minutes: 240,  applicable_cities: ['nyc'] },
+  police_presence:   { icon: 'PD',  abbr: 'PD',  color: '#ea580c', label_en: 'Police presence',   label_es: 'Presencia policial',         default_ttl_minutes: 120,  applicable_cities: ['nyc', 'guatemala_city'] },
+  route_change:      { icon: 'RTE', abbr: 'RTE', color: '#ca8a04', label_en: 'Route change',       label_es: 'Cambio de ruta',             default_ttl_minutes: 180,  applicable_cities: ['nyc', 'guatemala_city'] },
+  counter_protest:   { icon: 'CP',  abbr: 'CP',  color: '#b91c1c', label_en: 'Counter-protest',    label_es: 'Contra-manifestación',       default_ttl_minutes: 120,  applicable_cities: ['nyc', 'guatemala_city'] },
+  dispersal_warning: { icon: 'DSP', abbr: 'DSP', color: '#991b1b', label_en: 'Dispersal warning',  label_es: 'Aviso de dispersión',        default_ttl_minutes: 60,   applicable_cities: ['nyc', 'guatemala_city'] },
+  disinfo:           { icon: '?',   abbr: '?',   color: '#7c3aed', label_en: 'Possible disinfo',   label_es: 'Posible desinformación',     default_ttl_minutes: 1440, applicable_cities: ['nyc', 'guatemala_city'] },
+  medical_aid:       { icon: '+',   abbr: '+',   color: '#16a34a', label_en: 'Medical aid',         label_es: 'Punto de auxilio',           default_ttl_minutes: 360,  applicable_cities: ['nyc', 'guatemala_city'] },
+  safe_space:        { icon: 'SS',  abbr: 'SS',  color: '#0891b2', label_en: 'Safe space',          label_es: 'Espacio seguro',             default_ttl_minutes: 480,  applicable_cities: ['nyc', 'guatemala_city'] },
+  supplies_needed:   { icon: 'SUP', abbr: 'SUP', color: '#2563eb', label_en: 'Supplies needed',     label_es: 'Se necesitan suministros',   default_ttl_minutes: 360,  applicable_cities: ['nyc', 'guatemala_city'] },
+  signup_full:       { icon: 'FUL', abbr: 'FUL', color: '#6b7280', label_en: 'Signup full',         label_es: 'Cupo lleno',                 default_ttl_minutes: 1440, applicable_cities: ['nyc', 'guatemala_city'] },
+  transport_offer:   { icon: 'TRP', abbr: 'TRP', color: '#0d9488', label_en: 'Transport offered',   label_es: 'Transporte disponible',      default_ttl_minutes: 240,  applicable_cities: ['nyc', 'guatemala_city'] },
+  other:             { icon: '·',   abbr: '·',   color: '#6b7280', label_en: 'Other',               label_es: 'Otro',                       default_ttl_minutes: 120,  applicable_cities: ['nyc', 'guatemala_city'] },
 };
 
 export const CITIES = {
@@ -126,3 +127,105 @@ export const NYC_BOROUGHS = [
 ] as const;
 
 export type NycBoroughSlug = typeof NYC_BOROUGHS[number]['slug'];
+
+// Approximate bounding boxes for geographic filtering (flags, lat/lng-based events)
+export const BOROUGH_BBOX: Record<string, { minLat: number; maxLat: number; minLng: number; maxLng: number }> = {
+  manhattan:     { minLat: 40.700, maxLat: 40.880, minLng: -74.020, maxLng: -73.910 },
+  brooklyn:      { minLat: 40.570, maxLat: 40.740, minLng: -74.045, maxLng: -73.833 },
+  queens:        { minLat: 40.540, maxLat: 40.820, minLng: -73.962, maxLng: -73.700 },
+  bronx:         { minLat: 40.785, maxLat: 40.916, minLng: -73.933, maxLng: -73.750 },
+  staten_island: { minLat: 40.477, maxLat: 40.651, minLng: -74.260, maxLng: -74.052 },
+};
+
+// Keywords used for client-side borough matching against location_text
+export const BOROUGH_KEYWORDS: Record<string, string[]> = {
+  manhattan: [
+    'manhattan', 'midtown', 'lower east side', 'upper east side',
+    'upper west side', 'harlem', 'east harlem', 'washington heights', 'inwood',
+    'chelsea', "hell's kitchen", 'soho', 'tribeca', 'noho',
+    'nolita', 'greenwich village', 'west village', 'east village', 'flatiron',
+    'gramercy', 'kips bay', 'murray hill', 'battery park city', 'financial district',
+    'foley square', 'city hall park', 'civic center', 'little italy',
+    'two bridges', 'morningside heights', 'hamilton heights', 'sugar hill',
+    'lenox hill', 'yorkville', 'carnegie hill', 'washington square',
+    'times square', 'union square', 'central park', 'hudson yards',
+  ],
+  brooklyn: [
+    'brooklyn', 'bushwick', 'bed-stuy', 'bedford-stuyvesant', 'crown heights',
+    'park slope', 'williamsburg', 'sunset park', 'flatbush', 'east flatbush',
+    'canarsie', 'east new york', 'greenpoint', 'red hook', 'dumbo', 'cobble hill',
+    'carroll gardens', 'gowanus', 'prospect heights', 'fort greene', 'clinton hill',
+    'bay ridge', 'bensonhurst', 'borough park', 'marine park', 'sheepshead bay',
+    'brighton beach', 'coney island', 'brownsville', 'ocean hill', 'flatlands',
+    'ditmas park', 'kensington', 'windsor terrace', 'boerum hill',
+    'prospect park', 'downtown brooklyn', 'brooklyn heights', 'fulton mall',
+  ],
+  queens: [
+    'queens', 'astoria', 'jackson heights', 'flushing', 'jamaica', 'forest hills',
+    'corona', 'rego park', 'long island city', 'sunnyside', 'woodside', 'elmhurst',
+    'ridgewood', 'maspeth', 'glendale', 'richmond hill', 'south ozone park',
+    'howard beach', 'rockaway', 'far rockaway', 'college point', 'whitestone',
+    'bayside', 'fresh meadows', 'hollis', 'springfield gardens', 'laurelton',
+  ],
+  bronx: [
+    'bronx', 'south bronx', 'mott haven', 'hunts point', 'fordham', 'riverdale',
+    'university heights', 'tremont', 'morrisania', 'concourse', 'highbridge',
+    'claremont', 'belmont', 'morris heights', 'pelham bay', 'co-op city',
+    'norwood', 'wakefield', 'williamsbridge', 'eastchester', 'soundview',
+  ],
+  staten_island: [
+    'staten island', 'st. george', 'st george', 'stapleton', 'port richmond',
+    'new brighton', 'tompkinsville', 'clifton', 'rosebank',
+  ],
+};
+
+// Neighborhoods grouped by borough, for nested filter UI
+export const NYC_NEIGHBORHOODS: Record<string, Array<{ slug: string; name: string }>> = {
+  manhattan: [
+    { slug: 'harlem', name: 'Harlem' },
+    { slug: 'washington_heights', name: 'Washington Heights' },
+    { slug: 'upper_west_side', name: 'Upper West Side' },
+    { slug: 'upper_east_side', name: 'Upper East Side' },
+    { slug: 'midtown', name: 'Midtown' },
+    { slug: 'chelsea', name: 'Chelsea' },
+    { slug: 'east_village', name: 'East Village' },
+    { slug: 'lower_east_side', name: 'Lower East Side' },
+    { slug: 'downtown', name: 'Downtown / FiDi' },
+    { slug: 'chinatown', name: 'Chinatown' },
+  ],
+  brooklyn: [
+    { slug: 'bushwick', name: 'Bushwick' },
+    { slug: 'bed_stuy', name: 'Bed-Stuy' },
+    { slug: 'crown_heights', name: 'Crown Heights' },
+    { slug: 'sunset_park', name: 'Sunset Park' },
+    { slug: 'williamsburg', name: 'Williamsburg' },
+    { slug: 'park_slope', name: 'Park Slope' },
+    { slug: 'red_hook', name: 'Red Hook' },
+    { slug: 'brownsville', name: 'Brownsville' },
+    { slug: 'east_new_york', name: 'East New York' },
+    { slug: 'flatbush', name: 'Flatbush' },
+  ],
+  queens: [
+    { slug: 'jackson_heights', name: 'Jackson Heights' },
+    { slug: 'astoria', name: 'Astoria' },
+    { slug: 'corona', name: 'Corona' },
+    { slug: 'flushing', name: 'Flushing' },
+    { slug: 'jamaica', name: 'Jamaica' },
+    { slug: 'long_island_city', name: 'Long Island City' },
+    { slug: 'woodside', name: 'Woodside' },
+    { slug: 'ridgewood', name: 'Ridgewood' },
+  ],
+  bronx: [
+    { slug: 'south_bronx', name: 'South Bronx' },
+    { slug: 'mott_haven', name: 'Mott Haven' },
+    { slug: 'hunts_point', name: 'Hunts Point' },
+    { slug: 'fordham', name: 'Fordham' },
+    { slug: 'highbridge', name: 'Highbridge' },
+    { slug: 'riverdale', name: 'Riverdale' },
+  ],
+  staten_island: [
+    { slug: 'st_george', name: 'St. George' },
+    { slug: 'stapleton', name: 'Stapleton' },
+    { slug: 'port_richmond', name: 'Port Richmond' },
+  ],
+};

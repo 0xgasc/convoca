@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
+import { Calendar, MapPin, Users } from 'lucide-react';
 import { SignupCTA } from '@/components/EventDetail/SignupCTA';
 import { SourcesList } from '@/components/EventDetail/SourcesList';
 import { ReasoningTrace } from '@/components/EventDetail/ReasoningTrace';
@@ -40,8 +41,7 @@ export default async function EventDetailPage({ params }: { params: { id: string
         <Link href="/" className="text-sm text-blue-700 hover:underline">← {lang === 'es' ? 'Volver al mapa' : 'Back to map'}</Link>
 
         <header className="mt-3 mb-6">
-          <div className="flex items-baseline gap-2 text-xs text-neutral-500 uppercase tracking-wide">
-            <span>{meta.icon}</span>
+          <div className="flex items-baseline gap-2 text-xs uppercase tracking-wide" style={{ color: meta.color }}>
             <span>{lang === 'es' ? meta.label_es : meta.label_en}</span>
             {event.extraction_confidence !== null && (
               <span>· {lang === 'es' ? 'confianza' : 'confidence'} {event.extraction_confidence.toFixed(2)}</span>
@@ -49,9 +49,9 @@ export default async function EventDetailPage({ params }: { params: { id: string
           </div>
           <h1 className="text-2xl font-semibold text-neutral-900 mt-1">{event.title}</h1>
           <div className="mt-2 text-sm text-neutral-700 space-y-0.5">
-            {event.datetime_text_raw && <div>📅 {event.datetime_text_raw}</div>}
-            {event.location_text && <div>📍 {event.location_text}</div>}
-            {event.organizer && <div>👥 {lang === 'es' ? 'organizado por' : 'organized by'} {event.organizer}</div>}
+            {event.datetime_text_raw && <div className="flex items-start gap-1.5"><Calendar className="w-3.5 h-3.5 mt-0.5 shrink-0 text-neutral-400" />{event.datetime_text_raw}</div>}
+            {event.location_text && <div className="flex items-start gap-1.5"><MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0 text-neutral-400" />{event.location_text}</div>}
+            {event.organizer && <div className="flex items-start gap-1.5"><Users className="w-3.5 h-3.5 mt-0.5 shrink-0 text-neutral-400" />{lang === 'es' ? 'organizado por' : 'organized by'} {event.organizer}</div>}
           </div>
           {event.cause_tags.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1">

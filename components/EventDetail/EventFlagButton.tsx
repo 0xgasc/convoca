@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Flag } from 'lucide-react';
 import { FlagModal } from '@/components/Map/FlagModal';
 import { CITIES } from '@/lib/constants';
 import type { CitySlug } from '@/lib/types';
@@ -42,7 +43,7 @@ export function EventFlagButton({ city, eventId, fallbackLat, fallbackLng, langu
         onClick={() => setOpen(true)}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
       >
-        🚩 <span>{language === 'es' ? 'Reportar aviso' : 'Add a flag'}</span>
+        <Flag className="w-3.5 h-3.5" /><span>{language === 'es' ? 'Reportar aviso' : 'Add a flag'}</span>
       </button>
       {open && sessionId && (
         <FlagModal

@@ -5,7 +5,7 @@ import {
   X, ExternalLink, Calendar, MapPin, Users as UsersIcon, Link as LinkIcon,
   Flag, Loader2,
 } from 'lucide-react';
-import { CITIES, CAUSE_DISPLAY, EVENT_TYPE_DISPLAY } from '@/lib/constants';
+import { CITIES, CAUSE_DISPLAY, EVENT_TYPE_DISPLAY, FLAG_TYPE_DISPLAY } from '@/lib/constants';
 import { getEventIcon } from '@/lib/icons';
 import type { CanonicalEvent, CitySlug } from '@/lib/types';
 import { OpenInMaps } from './OpenInMaps';
@@ -133,11 +133,6 @@ export function EventModal({ eventId, sessionId, isVerified, onClose, onRequestS
             {/* Title block */}
             <div>
               <h1 className="text-xl font-semibold text-neutral-900 leading-snug">{event.title}</h1>
-              {event.extraction_confidence != null && (
-                <div className="mt-1 text-[11px] text-neutral-500">
-                  {lang === 'es' ? 'Confianza de extracción' : 'Extraction confidence'}: {event.extraction_confidence.toFixed(2)}
-                </div>
-              )}
             </div>
 
             {/* Metadata grid */}
@@ -232,18 +227,30 @@ export function EventModal({ eventId, sessionId, isVerified, onClose, onRequestS
 
             {/* Live flags on this event */}
             {data && data.flags.length > 0 && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
-                <div className="text-xs uppercase tracking-wide text-amber-800 mb-1">
-                  {lang === 'es' ? 'Avisos en tiempo real' : 'Live community flags'}
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1.5">
+                <div className="text-xs uppercase tracking-wide text-amber-800 font-medium">
+                  {lang === 'es' ? 'Avisos comunitarios' : 'Community flags'}
                 </div>
-                <ul className="space-y-1 text-amber-900">
-                  {data.flags.map(f => (
-                    <li key={f.id}>
-                      <span className="font-medium">{f.flag_type.replace(/_/g, ' ')}</span>
-                      {f.note && <span> — {f.note}</span>}
-                    </li>
-                  ))}
-                </ul>
+                {data.flags.map(f => {
+                  const fm = FLAG_TYPE_DISPLAY[f.flag_type] ?? FLAG_TYPE_DISPLAY.other;
+                  const isUrgent = f.severity === 'urgent';
+                  return (
+                    <div key={f.id} className="flex items-start gap-2 text-sm">
+                      <span className="inline-flex items-center justify-center rounded-full text-white font-bold flex-shrink-0 text-[10px]"
+                        style={{ background: fm.color, width: 22, height: 22 }}>
+                        {fm.abbr}
+                      </span>
+                      <div>
+                        <span className="font-medium" style={{ color: fm.color }}>
+                          {lang === 'es' ? fm.label_es : fm.label_en}
+                          {isUrgent && <span className="ml-1 text-[10px] uppercase tracking-wide text-red-600">urgent</span>}
+                        </span>
+                        {f.note && <span className="text-neutral-700"> — {f.note}</span>}
+                        <span className="text-neutral-500 text-xs ml-1">· {new Date(f.created_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 

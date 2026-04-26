@@ -25,6 +25,18 @@ interface SeedSource {
 }
 
 const NYC_SOURCES: SeedSource[] = [
+  // Elections + civic democracy
+  { city_slug: 'nyc', borough: 'citywide', ingest_method: 'website_scrape', source_url: 'https://www.vote.nyc/page/election-calendar', display_name: 'NYC Board of Elections', source_category: ['government'], primary_causes: ['voting_rights'], language: 'en', poll_interval_minutes: 1440 },
+  { city_slug: 'nyc', borough: 'citywide', ingest_method: 'rss', source_url: 'https://www.lwvny.org/feed/', display_name: 'League of Women Voters NY', source_category: ['community_org'], primary_causes: ['voting_rights'], language: 'en' },
+  { city_slug: 'nyc', borough: 'citywide', ingest_method: 'rss', source_url: 'https://www.commoncause.org/new-york/feed/', display_name: 'Common Cause NY', source_category: ['protest_org'], primary_causes: ['voting_rights', 'anti_corruption'], language: 'en' },
+  { city_slug: 'nyc', borough: 'citywide', ingest_method: 'rss', source_url: 'https://www.nypirg.org/feed/', display_name: 'NYPIRG', source_category: ['community_org'], primary_causes: ['voting_rights', 'climate'], language: 'en' },
+  { city_slug: 'nyc', borough: 'citywide', ingest_method: 'rss', source_url: 'https://www.nyccfb.info/feed/', display_name: 'NYC Campaign Finance Board', source_category: ['government'], primary_causes: ['voting_rights'], language: 'en', poll_interval_minutes: 720 },
+  { city_slug: 'nyc', borough: 'citywide', ingest_method: 'mobilize_api', source_url: 'https://www.mobilize.us/naacp-nycmetro/', display_name: 'NAACP NYC Metro', source_category: ['protest_org', 'community_org'], primary_causes: ['voting_rights', 'racial_justice'], language: 'en' },
+  { city_slug: 'nyc', borough: 'citywide', ingest_method: 'mobilize_api', source_url: 'https://www.mobilize.us/newera-colorado/', display_name: 'New Era NY', source_category: ['community_org'], primary_causes: ['voting_rights', 'racial_justice'], language: 'en' },
+  { city_slug: 'nyc', borough: 'citywide', ingest_method: 'rss', source_url: 'https://aaldef.org/feed/', display_name: 'AALDEF (Asian American Legal Defense)', source_category: ['community_org'], primary_causes: ['voting_rights', 'immigration'], language: 'en' },
+  { city_slug: 'nyc', borough: 'citywide', ingest_method: 'rss', source_url: 'https://www.naleo.org/feed/', display_name: 'NALEO Educational Fund', source_category: ['community_org'], primary_causes: ['voting_rights', 'immigration'], language: 'mixed' },
+  { city_slug: 'nyc', borough: 'citywide', ingest_method: 'rss', source_url: 'https://www.aclu.org/legal-document-feed', display_name: 'NYCLU', source_category: ['protest_org'], primary_causes: ['voting_rights', 'racial_justice', 'immigration'], language: 'en' },
+
   // Citywide civic action
   { city_slug: 'nyc', borough: 'citywide', ingest_method: 'website_scrape', source_url: 'https://www.handsoffnyc.com/calendar', display_name: 'Hands Off NYC', source_category: ['protest_org'], primary_causes: ['immigration'], language: 'en' },
   { city_slug: 'nyc', borough: 'citywide', ingest_method: 'website_scrape', source_url: 'https://www.riseandresist.org/calendar', display_name: 'Rise and Resist', source_category: ['protest_org'], primary_causes: ['immigration', 'racial_justice'], language: 'en' },

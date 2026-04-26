@@ -32,6 +32,8 @@ export interface RecommenderInput {
     action_type: string;
     datetime_iso: string | null;
     location_text: string;
+    borough: string | null;
+    neighborhood: string | null;
     organizer: string | null;
     cause_tags: string[];
     distance_km: number | null;
@@ -53,6 +55,8 @@ export async function runRecommender(input: RecommenderInput): Promise<RankedEve
       action_type: e.action_type,
       datetime_iso: e.datetime_iso ?? '',
       location_text: e.location_text,
+      borough: e.borough,
+      neighborhood: e.neighborhood,
       organizer: e.organizer ?? '',
       cause_tags: e.cause_tags,
       distance_km: e.distance_km,
