@@ -16,6 +16,34 @@ import { EventComments } from './EventComments';
 import { SaveButton } from './SaveButton';
 import { FlagModal } from '@/components/Map/FlagModal';
 
+function formatDatetimeDisplay(raw: string | null | undefined, iso: string | null | undefined, endIso?: string | null): string {
+  const fmt = (d: string) => {
+    try {
+      return new Date(d).toLocaleString('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit', hour12: true,
+      });
+    } catch { return d; }
+  };
+
+  // If raw is human-readable (not ISO-like and not an ISO range), use it
+  if (raw && !/^\d{4}-\d{2}-\d{2}/.test(raw) && !/^from \d{4}/i.test(raw)) {
+    return raw;
+  }
+
+  // ISO range in raw: "From 2026-10-27T11:00:00 to 2026-10-27T12:00:00"
+  const rangeMatch = raw?.match(/^from\s+(\S+)\s+to\s+(\S+)/i);
+  if (rangeMatch) return `${fmt(rangeMatch[1])} – ${fmt(rangeMatch[2])}`;
+
+  // Single ISO in raw
+  if (raw && /^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    return endIso ? `${fmt(raw)} – ${fmt(endIso)}` : fmt(raw);
+  }
+
+  if (iso) return endIso ? `${fmt(iso)} – ${fmt(endIso)}` : fmt(iso);
+  return raw ?? '';
+}
+
 interface EventDetailPayload {
   event: CanonicalEvent & { source_image_url?: string | null };
   sources: Parameters<typeof SourcesList>[0]['sources'];
@@ -137,15 +165,12 @@ export function EventModal({ eventId, sessionId, isVerified, onClose, onRequestS
 
             {/* Metadata grid */}
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-              {event.datetime_text_raw && (
+              {(event.datetime_text_raw || event.datetime_iso) && (
                 <div className="flex items-start gap-2">
                   <Calendar className="w-4 h-4 mt-0.5 text-neutral-500 shrink-0" />
                   <div>
                     <dt className="text-[10px] uppercase tracking-wide text-neutral-500">{lang === 'es' ? 'Fecha' : 'When'}</dt>
-                    <dd className="text-neutral-900">{event.datetime_text_raw}</dd>
-                    {event.datetime_iso && (
-                      <dd className="text-[11px] text-neutral-500">{new Date(event.datetime_iso).toLocaleString()}</dd>
-                    )}
+                    <dd className="text-neutral-900">{formatDatetimeDisplay(event.datetime_text_raw, event.datetime_iso, event.end_datetime_iso)}</dd>
                   </div>
                 </div>
               )}

@@ -108,6 +108,33 @@ export function DropZone({ sessionId, city, onSubmitted, language = 'en' }: Drop
     setUploads(prev => prev.map(u => u.id === id ? { ...u, ...patch } : u));
   };
 
+  // Convert HEIC/HEIF (iPhone camera) to JPEG via canvas before uploading
+  const normalizeImageFile = useCallback(async (file: File): Promise<File> => {
+    const isHeic = file.type === 'image/heic' || file.type === 'image/heif'
+      || /\.heic$/i.test(file.name) || /\.heif$/i.test(file.name);
+    if (!isHeic) return file;
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { resolve(file); return; }
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob(blob => {
+          URL.revokeObjectURL(url);
+          if (!blob) { resolve(file); return; }
+          const name = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+          resolve(new File([blob], name, { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.92);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read image')); };
+      img.src = url;
+    });
+  }, []);
+
   // 1) Stash upload → 2) /api/submit with the permanent URL
   const sendOneImage = useCallback(async (file: File) => {
     const id = crypto.randomUUID();
@@ -117,8 +144,11 @@ export function DropZone({ sessionId, city, onSubmitted, language = 'en' }: Drop
     ]);
 
     try {
+      // Normalize HEIC → JPEG for broad server compatibility
+      const normalized = await normalizeImageFile(file);
+
       // Step 1 — upload to Stash for permanent storage
-      const stash = await uploadToStash(file, p => {
+      const stash = await uploadToStash(normalized, p => {
         updateUpload(id, { percent: p.percent });
       });
 
@@ -195,7 +225,9 @@ export function DropZone({ sessionId, city, onSubmitted, language = 'en' }: Drop
         onDrop={e => {
           e.preventDefault();
           setDragOver(false);
-          const files = Array.from(e.dataTransfer.files ?? []).filter(f => f.type.startsWith('image/'));
+          const files = Array.from(e.dataTransfer.files ?? []).filter(f =>
+            f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name)
+          );
           if (files.length > 0) void sendImages(files);
         }}
         onClick={() => fileInputRef.current?.click()}
@@ -209,7 +241,7 @@ export function DropZone({ sessionId, city, onSubmitted, language = 'en' }: Drop
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           multiple
           className="hidden"
           onChange={e => {
@@ -248,9 +280,9 @@ export function DropZone({ sessionId, city, onSubmitted, language = 'en' }: Drop
                 </span>
               )}
               {u.status === 'error' && (
-                <span className="inline-flex items-center gap-1 text-red-700" title={u.message}>
-                  <AlertTriangle className="w-3 h-3" />
-                  err
+                <span className="inline-flex items-center gap-1 text-red-700 max-w-[160px] truncate" title={u.message}>
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{u.message ?? 'Upload failed'}</span>
                 </span>
               )}
               <button
